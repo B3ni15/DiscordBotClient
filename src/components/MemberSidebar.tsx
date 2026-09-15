@@ -66,7 +66,8 @@ export function MemberSidebar() {
     [presenceByGuild],
   );
 
-  const hasPresence = presenceByUser.size > 0;
+  // An empty map can still be valid: it means every known member is offline.
+  const hasPresence = presenceByGuild !== undefined;
 
   const all = useMemo(() => Object.values(members ?? {}).filter((m) => m.user), [members]);
 
