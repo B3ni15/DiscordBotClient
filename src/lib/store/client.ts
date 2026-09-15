@@ -39,6 +39,7 @@ interface ClientState {
   /** False once the channel's history is fully loaded. */
   hasMoreByChannel: Record<string, boolean>;
   membersByGuild: Record<string, Record<string, APIGuildMember>>;
+  presenceByGuild: Record<string, Record<string, string>>;
   typingByChannel: Record<string, TypingUser[]>;
 
   selectedGuildId: string | null;
@@ -70,6 +71,7 @@ export const useClient = create<ClientState>((set, get) => ({
   messagesByChannel: {},
   hasMoreByChannel: {},
   membersByGuild: {},
+  presenceByGuild: {},
   typingByChannel: {},
   selectedGuildId: null,
   selectedChannelId: null,
@@ -127,6 +129,7 @@ export const useClient = create<ClientState>((set, get) => ({
       messagesByChannel: {},
       hasMoreByChannel: {},
       membersByGuild: {},
+      presenceByGuild: {},
       typingByChannel: {},
       selectedGuildId: null,
       selectedChannelId: null,
@@ -206,6 +209,7 @@ function handleDispatch(
     case "GUILD_CREATE": {
       const guild = raw as GatewayGuildCreateDispatchData;
       const channels = guild.channels ?? [];
+      const presences = (guild as GatewayGuildCreateDispatchData & { presences?: unknown[] }).presences;
       set((state) => ({
         guilds: { ...state.guilds, [guild.id]: guild as unknown as APIGuild },
         guildOrder: state.guildOrder.includes(guild.id)
@@ -227,12 +231,36 @@ function handleDispatch(
               .map((member) => [member.user!.id, member as APIGuildMember]),
           ),
         },
+        presenceByGuild: {
+          ...state.presenceByGuild,
+          [guild.id]: presenceMap(presences),
+        },
       }));
       break;
     }
     case "GUILD_UPDATE": {
       const guild = raw as APIGuild;
       set((state) => ({ guilds: { ...state.guilds, [guild.id]: { ...state.guilds[guild.id], ...guild } } }));
+      break;
+    }
+    case "PRESENCE_UPDATE": {
+      const data = raw as {
+        guild_id?: string;
+        user?: { id?: string };
+        status?: string;
+      };
+      if (!data.guild_id || !data.user?.id) break;
+      const guildId = data.guild_id;
+      const userId = data.user.id;
+      set((state) => ({
+        presenceByGuild: {
+          ...state.presenceByGuild,
+          [guildId]: {
+            ...(state.presenceByGuild[guildId] ?? {}),
+            [userId]: data.status ?? "offline",
+          },
+        },
+      }));
       break;
     }
     case "GUILD_DELETE": {
@@ -243,6 +271,9 @@ function handleDispatch(
         return {
           guilds,
           guildOrder: state.guildOrder.filter((guildId) => guildId !== id),
+          presenceByGuild: Object.fromEntries(
+            Object.entries(state.presenceByGuild).filter(([guildId]) => guildId !== id),
+          ),
           selectedGuildId: state.selectedGuildId === id ? null : state.selectedGuildId,
         };
       });
@@ -451,6 +482,15 @@ function mapMessage(
 
 function reactionKey(emoji: { id?: string | null; name?: string | null }) {
   return emoji.id ?? emoji.name ?? "";
+}
+
+function presenceMap(presences: unknown[] | undefined): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const raw of presences ?? []) {
+    const presence = raw as { user?: { id?: string }; status?: string };
+    if (presence.user?.id) result[presence.user.id] = presence.status ?? "offline";
+  }
+  return result;
 }
 
 function formatClientError(cause: unknown, fallback: string) {

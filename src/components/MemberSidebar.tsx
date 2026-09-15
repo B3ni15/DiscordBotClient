@@ -13,12 +13,6 @@ import {
 } from "@/lib/discord/roles";
 import { useClient } from "@/lib/store/client";
 
-/** Presence payloads ride along with GUILD_CREATE, but only with the intent on. */
-interface GuildPresence {
-  user?: { id?: string };
-  status?: string;
-}
-
 const OFFLINE_GROUP_ID = "__offline__";
 const STATUS_COLORS: Record<string, string> = {
   online: "bg-accent",
@@ -50,6 +44,9 @@ export function MemberSidebar() {
   const guildId = useClient((state) => state.selectedGuildId);
   const guild = useClient((state) => (guildId ? state.guilds[guildId] : undefined));
   const members = useClient((state) => (guildId ? state.membersByGuild[guildId] : undefined));
+  const presenceByGuild = useClient((state) =>
+    guildId ? state.presenceByGuild[guildId] : undefined,
+  );
   const getGateway = useClient((state) => state.getGateway);
   const status = useClient((state) => state.status);
 
@@ -63,15 +60,11 @@ export function MemberSidebar() {
 
   const roles: APIRole[] = useMemo(() => guild?.roles ?? [], [guild]);
 
-  /** userId -> presence status, empty when the PRESENCE INTENT is off. */
-  const presenceByUser = useMemo(() => {
-    const raw = (guild as { presences?: GuildPresence[] } | undefined)?.presences ?? [];
-    const map = new Map<string, string>();
-    for (const presence of raw) {
-      if (presence.user?.id) map.set(presence.user.id, presence.status ?? "offline");
-    }
-    return map;
-  }, [guild]);
+  /** Presence updates are stored separately from the guild payload. */
+  const presenceByUser = useMemo(
+    () => new Map(Object.entries(presenceByGuild ?? {})),
+    [presenceByGuild],
+  );
 
   const hasPresence = presenceByUser.size > 0;
 

@@ -93,7 +93,10 @@ export class RestClient {
         await sleep(bucket.resetAt - Date.now());
       }
 
-      const url = new URL(API_BASE + path);
+      const url = new URL(
+        API_BASE + path,
+        typeof window === "undefined" ? "http://localhost" : window.location.origin,
+      );
       for (const [name, value] of Object.entries(options.query ?? {})) {
         if (value !== undefined) url.searchParams.set(name, String(value));
       }
