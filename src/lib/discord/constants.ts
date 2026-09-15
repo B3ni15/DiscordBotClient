@@ -1,4 +1,4 @@
-export const API_BASE = "https://discord.com/api/v10";
+export const API_BASE = "/api/discord";
 export const CDN_BASE = "https://cdn.discordapp.com";
 export const GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
 

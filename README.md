@@ -1,10 +1,11 @@
 # disbotclient
 
-A Discord client for your bot that runs entirely in the browser.
+A Discord client for your bot that runs in the browser.
 [disbotclient.xyz](https://disbotclient.xyz)
 
-There is no backend. Your bot token stays in the browser's `localStorage` and
-every request goes straight to Discord — no proxy, no database, no logging.
+The app has a small same-origin API proxy for Discord REST requests. Your bot
+token stays in the browser's `localStorage`; the proxy only forwards requests to
+Discord and does not store or log the token.
 
 ## Run it
 
@@ -13,10 +14,10 @@ npm install
 npm run dev
 ```
 
-Static build, deployable to anything that serves files:
+Production build:
 
 ```bash
-npm run build   # -> out/
+npm run build
 ```
 
 ## Your token
