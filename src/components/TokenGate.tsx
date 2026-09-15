@@ -1,11 +1,7 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { useClient } from "@/lib/store/client";
-
-const subscribeToHydration = () => () => {};
-const getClientHydrationSnapshot = () => true;
-const getServerHydrationSnapshot = () => false;
 
 /** Login screen: takes a bot token and hands it to the store. */
 export function TokenGate() {
@@ -13,15 +9,10 @@ export function TokenGate() {
   const error = useClient((state) => state.error);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
-  const hydrated = useSyncExternalStore(
-    subscribeToHydration,
-    getClientHydrationSnapshot,
-    getServerHydrationSnapshot,
-  );
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!token.trim()) return;
+    if (busy || !token.trim()) return;
     setBusy(true);
     // login resolves either way; on success this component unmounts.
     await login(token.trim());
@@ -33,8 +24,8 @@ export function TokenGate() {
       <div className="w-full max-w-md">
         <h1 className="font-mono text-2xl font-medium tracking-tight">disbotclient</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted">
-          A Discord client for your bot that runs entirely in the browser. There is no server
-          behind it: your token stays on this machine and every request goes straight to Discord.
+          A Discord client for your bot. Your token stays on this machine and is only forwarded
+          to Discord through the local API proxy.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-8">
@@ -53,8 +44,10 @@ export function TokenGate() {
           />
           <button
             type="submit"
-            disabled={!hydrated || busy || !token.trim()}
-            className="mt-4 w-full rounded-md bg-accent px-3 py-2 text-sm font-semibold text-ink transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-disabled={busy || !token.trim()}
+            className={`mt-4 w-full rounded-md bg-accent px-3 py-2 text-sm font-semibold text-ink transition-colors hover:bg-accent/90 ${
+              busy || !token.trim() ? "cursor-not-allowed opacity-40" : ""
+            }`}
           >
             {busy ? "Connecting…" : "Connect"}
           </button>

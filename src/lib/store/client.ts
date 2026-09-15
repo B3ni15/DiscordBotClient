@@ -86,23 +86,24 @@ export const useClient = create<ClientState>((set, get) => ({
   },
 
   login: async (token) => {
+    const normalizedToken = normalizeToken(token);
     set({ status: "connecting", error: null });
-    rest = new RestClient(token);
+    rest = new RestClient(normalizedToken);
 
     let user: APIUser;
     try {
       user = await api.currentUser(rest);
-    } catch {
+    } catch (cause) {
       rest = null;
-      set({ status: "idle", error: "Discord rejected this token. Check that you copied the bot token." });
+      set({ status: "idle", error: formatLoginError(cause) });
       return;
     }
 
-    localStorage.setItem(TOKEN_KEY, token);
-    set({ token, user });
+    localStorage.setItem(TOKEN_KEY, normalizedToken);
+    set({ token: normalizedToken, user });
 
     gateway?.disconnect();
-    gateway = new GatewayClient(token);
+    gateway = new GatewayClient(normalizedToken);
     gateway.on("status", (status) => set({ status }));
     gateway.on("error", (error) => set({ error: error.message }));
     gateway.on("dispatch", (event, data) => handleDispatch(set, get, event, data));
@@ -457,6 +458,18 @@ function formatClientError(cause: unknown, fallback: string) {
     return "Network error while contacting Discord. Check your connection or browser access to discord.com.";
   }
   return cause instanceof Error ? cause.message : fallback;
+}
+
+function normalizeToken(token: string) {
+  return token.trim().replace(/^Bot\s+/i, "").replace(/^['"]|['"]$/g, "");
+}
+
+function formatLoginError(cause: unknown) {
+  if (cause instanceof Error && cause.message.includes("fetch")) {
+    return "Could not reach Discord. Check the local server and your network connection.";
+  }
+  if (cause instanceof Error) return `Discord rejected the token: ${cause.message}`;
+  return "Discord rejected the token. Check that you copied the bot token.";
 }
 
 /** 0 = text, 5 = announcement, 10/11/12 = threads. */
