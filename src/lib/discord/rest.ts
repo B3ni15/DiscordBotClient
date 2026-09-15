@@ -151,7 +151,11 @@ export class RestClient {
         throw new DiscordHTTPError(
           response.status,
           payload?.code,
-          payload?.message ?? `${response.status} ${response.statusText}`,
+          formatDiscordError(
+            response.status,
+            payload?.code,
+            payload?.message ?? `${response.status} ${response.statusText}`,
+          ),
           payload,
         );
       }
@@ -182,4 +186,14 @@ function bucketKey(method: Method, path: string): string {
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function formatDiscordError(status: number, code: number | undefined, message: string) {
+  if (status === 403 && code === 50013) {
+    return "Missing channel permission: grant the bot Send Messages (and Send Messages in Threads if this is a thread).";
+  }
+  if (status === 403 && code === 50001) {
+    return "Missing channel access: grant the bot View Channel for this channel.";
+  }
+  return code === undefined ? `${status}: ${message}` : `${status} (Discord code ${code}): ${message}`;
 }

@@ -4,7 +4,7 @@ import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { navApi } from "@/lib/discord/navApi";
 import { useClient } from "@/lib/store/client";
-import { getDMs, getServerDMs, setDMs, subscribeDMs, type StoredDM } from "./dmStore";
+import { getDMs, getServerDMs, rememberDM, setDMs, subscribeDMs, type StoredDM } from "./dmStore";
 
 export type { StoredDM };
 
@@ -40,17 +40,9 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
     setError(null);
     try {
       const channel = await navApi.createDM(getRest(), recipientId);
-      const recipient = channel.recipients?.[0];
-      const entry: StoredDM = {
-        channelId: channel.id,
-        recipientId,
-        name: recipient?.global_name ?? recipient?.username ?? recipientId,
-        avatar: recipient?.avatar ?? null,
-        openedAt: Date.now(),
-      };
-      setDMs([entry, ...entries.filter((item) => item.channelId !== entry.channelId)]);
+      rememberDM(channel);
       setUserId("");
-      open(entry.channelId);
+      open(channel.id);
     } catch (cause) {
       setError(
         cause instanceof Error

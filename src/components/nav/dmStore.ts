@@ -1,5 +1,5 @@
 /**
- * Opened DM channels, persisted in localStorage.
+ * Known DM channels, persisted in localStorage.
  *
  * Bot tokens have no endpoint that lists existing DMs, so the only way to show a
  * DM list is to remember the channels this browser opened. Exposed as an external
@@ -15,6 +15,11 @@ export interface StoredDM {
   name: string;
   avatar: string | null;
   openedAt: number;
+}
+
+interface DMChannel {
+  id: string;
+  recipients?: Array<{ id: string; username?: string; global_name?: string | null; avatar?: string | null }>;
 }
 
 const EMPTY: StoredDM[] = [];
@@ -48,6 +53,20 @@ export function getServerDMs(): StoredDM[] {
 export function setDMs(next: StoredDM[]) {
   localStorage.setItem(DM_STORAGE_KEY, JSON.stringify(next));
   for (const listener of listeners) listener();
+}
+
+export function rememberDM(channel: DMChannel) {
+  const recipient = channel.recipients?.[0];
+  if (!recipient) return;
+  const current = getDMs();
+  const entry: StoredDM = {
+    channelId: channel.id,
+    recipientId: recipient.id,
+    name: recipient.global_name ?? recipient.username ?? recipient.id,
+    avatar: recipient.avatar ?? null,
+    openedAt: Date.now(),
+  };
+  setDMs([entry, ...current.filter((item) => item.channelId !== entry.channelId)]);
 }
 
 function parse(raw: string | null): StoredDM[] {

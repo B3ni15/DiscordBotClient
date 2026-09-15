@@ -94,10 +94,9 @@ export function Settings({ onClose, className }: SettingsProps) {
           <h3 className="pb-2 text-xs font-semibold text-muted">Token</h3>
           <p className="text-xs leading-relaxed text-muted">
             Your bot token is stored only in this browser’s
-            <span className="font-mono text-amber"> localStorage</span>
-            (<span className="font-mono">disbotclient:token</span>). There is no server, and it is
-            never sent anywhere but Discord. Signing out clears it — always sign out on a shared
-            machine.
+            <span className="font-mono text-amber"> localStorage</span> and is forwarded only to
+            Discord through this app’s API proxy. Signing out clears it — always sign out on a
+            shared machine.
           </p>
         </section>
 

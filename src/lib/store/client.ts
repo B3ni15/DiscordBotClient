@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type {
   APIChannel,
+  APIDMChannel,
   APIGuild,
   APIGuildMember,
   APIMessage,
@@ -15,6 +16,7 @@ import type {
 import { api } from "@/lib/discord/api";
 import { GatewayClient, type GatewayStatus } from "@/lib/discord/gateway";
 import { RestClient } from "@/lib/discord/rest";
+import { rememberDM } from "@/components/nav/dmStore";
 
 const TOKEN_KEY = "disbotclient:token";
 
@@ -282,6 +284,10 @@ function handleDispatch(
     case "CHANNEL_CREATE":
     case "CHANNEL_UPDATE": {
       const channel = raw as APIChannel & { guild_id?: string };
+      if (channel.type === 1 || channel.type === 3) {
+        rememberDM(channel as APIDMChannel);
+        break;
+      }
       set((state) => {
         const guildId = channel.guild_id;
         const existing = guildId ? (state.channelsByGuild[guildId] ?? []) : [];
