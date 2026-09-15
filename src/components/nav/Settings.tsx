@@ -1,5 +1,6 @@
 "use client";
 
+import { NotificationSettings } from "@/components/notifications/NotificationSettings";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { useClient } from "@/lib/store/client";
 
@@ -66,6 +67,8 @@ export function Settings({ onClose, className }: SettingsProps) {
             <p className="text-xs text-muted">Not signed in. Add a bot token to connect.</p>
           )}
         </section>
+
+        <NotificationSettings className="mb-6" />
 
         <section className="mb-6">
           <h3 className="pb-2 text-xs font-semibold text-muted">Gateway</h3>
