@@ -455,7 +455,11 @@ function handleDispatch(
       break;
     }
     case "GUILD_MEMBERS_CHUNK": {
-      const data = raw as { guild_id: string; members: APIGuildMember[] };
+      const data = raw as {
+        guild_id: string;
+        members: APIGuildMember[];
+        presences?: unknown[];
+      };
       set((state) => ({
         membersByGuild: {
           ...state.membersByGuild,
@@ -464,6 +468,13 @@ function handleDispatch(
             ...Object.fromEntries(
               data.members.filter((m) => m.user).map((m) => [m.user!.id, m]),
             ),
+          },
+        },
+        presenceByGuild: {
+          ...state.presenceByGuild,
+          [data.guild_id]: {
+            ...(state.presenceByGuild[data.guild_id] ?? {}),
+            ...presenceMap(data.presences),
           },
         },
       }));

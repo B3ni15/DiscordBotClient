@@ -55,7 +55,7 @@ export function MemberSidebar() {
 
   useEffect(() => {
     if (!guildId || status !== "ready") return;
-    getGateway()?.requestGuildMembers(guildId);
+    getGateway()?.requestGuildMembers(guildId, { presences: true });
   }, [guildId, status, getGateway]);
 
   const roles: APIRole[] = useMemo(() => guild?.roles ?? [], [guild]);

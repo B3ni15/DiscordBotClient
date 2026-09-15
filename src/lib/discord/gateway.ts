@@ -103,13 +103,17 @@ export class GatewayClient {
   }
 
   /** Ask for the member list of a guild; answers arrive as GUILD_MEMBERS_CHUNK. */
-  requestGuildMembers(guildId: string, options: { query?: string; limit?: number } = {}) {
+  requestGuildMembers(
+    guildId: string,
+    options: { query?: string; limit?: number; presences?: boolean } = {},
+  ) {
     this.#send({
       op: GatewayOpcode.RequestGuildMembers,
       d: {
         guild_id: guildId,
         query: options.query ?? "",
         limit: options.limit ?? 0,
+        presences: options.presences ?? false,
       },
     });
   }
