@@ -1,25 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useClient } from "@/lib/store/client";
 
 /** Login screen: takes a bot token and hands it to the store. */
 export function TokenGate() {
   const login = useClient((state) => state.login);
   const error = useClient((state) => state.error);
-  const status = useClient((state) => state.status);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (status === "idle") setBusy(false);
-  }, [status]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!token.trim()) return;
     setBusy(true);
+    // login resolves either way; on success this component unmounts.
     await login(token.trim());
+    setBusy(false);
   }
 
   return (

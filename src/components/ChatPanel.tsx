@@ -1,19 +1,41 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { APIMessage } from "discord-api-types/v10";
+import { MessageEditor } from "@/components/actions/MessageEditor";
+import { MessageToolbar } from "@/components/actions/MessageToolbar";
+import { ReactionBar } from "@/components/actions/ReactionBar";
+import { MessageContent } from "@/components/message/MessageContent";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { useClient } from "@/lib/store/client";
+import { useUI } from "@/lib/store/ui";
 import { Composer } from "./Composer";
 import { TypingIndicator } from "./TypingIndicator";
 
 export function ChatPanel() {
   const channelId = useClient((state) => state.selectedChannelId);
-  const channel = useClient((state) => (channelId ? state.channelsById[channelId] : null));
-  const messages = useClient((state) => (channelId ? state.messagesByChannel[channelId] : undefined));
+
+  if (!channelId) {
+    return (
+      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted">
+        Válassz csatornát a bal oldali listából.
+      </div>
+    );
+  }
+
+  // Keyed by channel so scroll, reply and edit state reset on their own.
+  return <ChannelView key={channelId} channelId={channelId} />;
+}
+
+function ChannelView({ channelId }: { channelId: string }) {
+  const channel = useClient((state) => state.channelsById[channelId]);
+  const messages = useClient((state) => state.messagesByChannel[channelId]);
   const loadOlder = useClient((state) => state.loadOlderMessages);
+  const selfId = useClient((state) => state.user?.id);
   const scroller = useRef<HTMLDivElement>(null);
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<APIMessage | null>(null);
 
   // Keep the newest message in view unless the reader scrolled up.
   useLayoutEffect(() => {
@@ -22,29 +44,17 @@ export function ChatPanel() {
     }
   }, [messages, pinnedToBottom]);
 
-  useEffect(() => {
-    setPinnedToBottom(true);
-  }, [channelId]);
-
   function handleScroll() {
     const element = scroller.current;
     if (!element) return;
     setPinnedToBottom(element.scrollHeight - element.scrollTop - element.clientHeight < 80);
-    if (element.scrollTop < 200 && channelId) {
+    if (element.scrollTop < 200) {
       const previousHeight = element.scrollHeight;
       void loadOlder(channelId).then(() => {
         // Hold the reading position while older messages are prepended.
         element.scrollTop += element.scrollHeight - previousHeight;
       });
     }
-  }
-
-  if (!channelId) {
-    return (
-      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted">
-        Válassz csatornát a bal oldali listából.
-      </div>
-    );
   }
 
   const channelName = channel && "name" in channel ? channel.name : channelId;
@@ -56,6 +66,10 @@ export function ChatPanel() {
           #
         </span>
         <h2 className="truncate text-sm font-semibold">{channelName}</h2>
+        <div className="ml-auto flex items-center gap-1">
+          <HeaderButton panel="pins" label="Kitűzött üzenetek" glyph="⚑" />
+          <HeaderButton panel="search" label="Keresés" glyph="⌕" />
+        </div>
       </header>
 
       <div ref={scroller} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4">
@@ -70,6 +84,11 @@ export function ChatPanel() {
                 key={message.id}
                 message={message}
                 previous={messages[index - 1]}
+                isOwn={message.author.id === selfId}
+                editing={editingId === message.id}
+                onReply={setReplyTo}
+                onEdit={(target) => setEditingId(target.id)}
+                onEditDone={() => setEditingId(null)}
               />
             ))}
           </ol>
@@ -77,13 +96,64 @@ export function ChatPanel() {
       </div>
 
       <TypingIndicator channelId={channelId} />
-      <Composer channelId={channelId} channelName={channelName ?? ""} />
+      <Composer
+        channelId={channelId}
+        channelName={channelName ?? ""}
+        replyTo={replyTo}
+        onCancelReply={() => setReplyTo(null)}
+      />
     </section>
   );
 }
 
+function HeaderButton({
+  panel,
+  label,
+  glyph,
+}: {
+  panel: "pins" | "search";
+  label: string;
+  glyph: string;
+}) {
+  const togglePanel = useUI((state) => state.togglePanel);
+  const active = useUI((state) => state.panel === panel);
+
+  return (
+    <button
+      type="button"
+      onClick={() => togglePanel(panel)}
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      className={`grid h-8 w-8 place-items-center rounded text-base transition-colors ${
+        active ? "bg-raised text-accent" : "text-muted hover:bg-raised hover:text-text"
+      }`}
+    >
+      {glyph}
+    </button>
+  );
+}
+
+interface MessageRowProps {
+  message: APIMessage;
+  previous?: APIMessage;
+  isOwn: boolean;
+  editing: boolean;
+  onReply: (message: APIMessage) => void;
+  onEdit: (message: APIMessage) => void;
+  onEditDone: () => void;
+}
+
 /** Consecutive messages from one author within 7 minutes render as one block. */
-function MessageRow({ message, previous }: { message: APIMessage; previous?: APIMessage }) {
+function MessageRow({
+  message,
+  previous,
+  isOwn,
+  editing,
+  onReply,
+  onEdit,
+  onEditDone,
+}: MessageRowProps) {
   const grouped =
     previous !== undefined &&
     previous.author.id === message.author.id &&
@@ -93,12 +163,30 @@ function MessageRow({ message, previous }: { message: APIMessage; previous?: API
   const nick = (message as APIMessage & { member?: { nick?: string | null } }).member?.nick;
   const displayName = nick ?? message.author.global_name ?? message.author.username;
 
+  const body = editing ? (
+    <MessageEditor message={message} onDone={onEditDone} />
+  ) : (
+    <>
+      <MessageContent message={message} />
+      <ReactionBar message={message} className="mt-1" />
+    </>
+  );
+
   return (
-    <li className={`group relative rounded px-2 hover:bg-panel/60 ${grouped ? "py-0.5" : "mt-4 py-1"}`}>
+    <li
+      data-message-id={message.id}
+      className={`group relative rounded px-2 hover:bg-panel/60 ${grouped ? "py-0.5" : "mt-4 py-1"}`}
+    >
+      <MessageToolbar
+        message={message}
+        isOwn={isOwn}
+        onReply={onReply}
+        onEdit={onEdit}
+        className="absolute top-0 right-2 z-10 -translate-y-1/2"
+      />
+
       {grouped ? (
-        <div className="pl-12 text-sm leading-relaxed whitespace-pre-wrap break-words">
-          {message.content}
-        </div>
+        <div className="pl-12">{body}</div>
       ) : (
         <div className="flex gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -126,9 +214,7 @@ function MessageRow({ message, previous }: { message: APIMessage; previous?: API
                 })}
               </time>
             </div>
-            <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-              {message.content}
-            </div>
+            {body}
           </div>
         </div>
       )}

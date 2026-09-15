@@ -1,6 +1,7 @@
 "use client";
 
 import type { APIChannel } from "discord-api-types/v10";
+import { ThreadList } from "@/components/nav/ThreadList";
 import { isTextChannel, useClient } from "@/lib/store/client";
 
 const CATEGORY = 4;
@@ -26,6 +27,13 @@ export function ChannelSidebar() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-2 py-3">
+        {selectedChannelId && (
+          <ThreadList
+            channelId={selectedChannelId}
+            guildId={selectedGuildId ?? undefined}
+            className="mb-4"
+          />
+        )}
         {groups.map((group) => (
           <section key={group.id ?? "root"} className="mb-4">
             {group.name && (

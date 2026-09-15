@@ -1,18 +1,30 @@
 "use client";
 
 import { useRef, useState } from "react";
+import type { APIMessage } from "discord-api-types/v10";
+import { EmojiPicker } from "@/components/actions/EmojiPicker";
 import { api } from "@/lib/discord/api";
+import { replyToMessage } from "@/lib/discord/messageActions";
 import { useClient } from "@/lib/store/client";
 
 const TYPING_THROTTLE = 8000;
 
-export function Composer({ channelId, channelName }: { channelId: string; channelName: string }) {
+interface ComposerProps {
+  channelId: string;
+  channelName: string;
+  /** When set, the next message is sent as a reply to it. */
+  replyTo?: APIMessage | null;
+  onCancelReply?: () => void;
+}
+
+export function Composer({ channelId, channelName, replyTo, onCancelReply }: ComposerProps) {
   const sendMessage = useClient((state) => state.sendMessage);
   const getRest = useClient((state) => state.getRest);
   const [content, setContent] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const lastTypingAt = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -22,7 +34,12 @@ export function Composer({ channelId, channelName }: { channelId: string; channe
     setSending(true);
     setError(null);
     try {
-      await sendMessage(channelId, content, files);
+      if (replyTo && files.length === 0) {
+        await replyToMessage(getRest(), channelId, replyTo.id, content);
+      } else {
+        await sendMessage(channelId, content, files);
+      }
+      onCancelReply?.();
       setContent("");
       setFiles([]);
       if (textarea.current) textarea.current.style.height = "auto";
@@ -54,6 +71,26 @@ export function Composer({ channelId, channelName }: { channelId: string; channe
 
   return (
     <div className="shrink-0 px-4 pb-4">
+      {replyTo && (
+        <div className="flex items-center gap-2 rounded-t-lg border border-b-0 border-line bg-raised px-3 py-1.5 text-xs text-muted">
+          <span className="truncate">
+            Válasz erre:{" "}
+            <span className="text-text">
+              {replyTo.author.global_name ?? replyTo.author.username}
+            </span>
+            {files.length > 0 && " — csatolmánnyal együtt sima üzenetként megy ki"}
+          </span>
+          <button
+            type="button"
+            onClick={onCancelReply}
+            className="ml-auto text-muted hover:text-danger"
+            aria-label="Válasz megszakítása"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {files.length > 0 && (
         <ul className="mb-2 flex flex-wrap gap-2">
           {files.map((file, index) => (
@@ -75,7 +112,22 @@ export function Composer({ channelId, channelName }: { channelId: string; channe
         </ul>
       )}
 
-      <div className="flex items-end gap-2 rounded-lg border border-line bg-panel px-3 py-2 focus-within:border-accent">
+      <div
+        className={`relative flex items-end gap-2 border border-line bg-panel px-3 py-2 focus-within:border-accent ${
+          replyTo ? "rounded-b-lg" : "rounded-lg"
+        }`}
+      >
+        {pickerOpen && (
+          <EmojiPicker
+            className="absolute bottom-full left-0 mb-2 z-20"
+            onSelect={(emoji) => {
+              setContent((current) => current + emoji.text);
+              setPickerOpen(false);
+              textarea.current?.focus();
+            }}
+            onClose={() => setPickerOpen(false)}
+          />
+        )}
         <button
           type="button"
           onClick={() => fileInput.current?.click()}
@@ -94,6 +146,15 @@ export function Composer({ channelId, channelName }: { channelId: string; channe
             event.target.value = "";
           }}
         />
+        <button
+          type="button"
+          onClick={() => setPickerOpen((open) => !open)}
+          aria-expanded={pickerOpen}
+          aria-label="Emoji beszúrása"
+          className="pb-0.5 text-base leading-none text-muted hover:text-text"
+        >
+          ☺
+        </button>
         <textarea
           ref={textarea}
           rows={1}
