@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Fully static export: the app is a pure browser client, there is no server.
+  output: "export",
+  images: { unoptimized: true },
 };
 
 export default nextConfig;
