@@ -1,7 +1,10 @@
 "use client";
 
 import type { APIChannel } from "discord-api-types/v10";
+import { MuteButton } from "@/components/notifications/MuteButton";
+import { UnreadBadge } from "@/components/notifications/UnreadBadge";
 import { ThreadList } from "@/components/nav/ThreadList";
+import { useUnread } from "@/lib/notifications/unread";
 import { isTextChannel, useClient } from "@/lib/store/client";
 
 const CATEGORY = 4;
@@ -15,7 +18,6 @@ export function ChannelSidebar() {
   );
   const channelsById = useClient((state) => state.channelsById);
   const selectedChannelId = useClient((state) => state.selectedChannelId);
-  const selectChannel = useClient((state) => state.selectChannel);
 
   const channels = channelIds.map((id) => channelsById[id]).filter(Boolean);
   const groups = groupByCategory(channels);
@@ -40,31 +42,46 @@ export function ChannelSidebar() {
               <h3 className="px-2 pb-1 text-xs font-semibold text-muted">{group.name}</h3>
             )}
             <ul>
-              {group.channels.filter(isTextChannel).map((channel) => {
-                const active = channel.id === selectedChannelId;
-                const name = "name" in channel ? channel.name : null;
-                return (
-                  <li key={channel.id}>
-                    <button
-                      type="button"
-                      onClick={() => void selectChannel(channel.id)}
-                      className={`flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm transition-colors ${
-                        active ? "bg-raised text-text" : "text-muted hover:bg-raised/60 hover:text-text"
-                      }`}
-                    >
-                      <span aria-hidden className="text-muted">
-                        #
-                      </span>
-                      <span className="truncate">{name ?? channel.id}</span>
-                    </button>
-                  </li>
-                );
-              })}
+              {group.channels.filter(isTextChannel).map((channel) => (
+                <ChannelRow key={channel.id} channel={channel} />
+              ))}
             </ul>
           </section>
         ))}
       </div>
     </div>
+  );
+}
+
+/** One row per channel; a component so the unread hook stays out of a loop. */
+function ChannelRow({ channel }: { channel: APIChannel }) {
+  const selectedChannelId = useClient((state) => state.selectedChannelId);
+  const selectChannel = useClient((state) => state.selectChannel);
+  const unread = useUnread(channel.id);
+
+  const active = channel.id === selectedChannelId;
+  const name = "name" in channel ? channel.name : null;
+
+  return (
+    <li className="group/channel flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => void selectChannel(channel.id)}
+        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm transition-colors ${
+          active ? "bg-raised text-text" : "text-muted hover:bg-raised/60 hover:text-text"
+        }`}
+      >
+        <span aria-hidden className="text-muted">
+          #
+        </span>
+        <span className="truncate">{name ?? channel.id}</span>
+        <UnreadBadge count={unread} className="ml-auto" />
+      </button>
+      <MuteButton
+        channelId={channel.id}
+        className="opacity-0 transition-opacity group-hover/channel:opacity-100 focus-visible:opacity-100"
+      />
+    </li>
   );
 }
 

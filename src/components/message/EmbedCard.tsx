@@ -72,7 +72,7 @@ export function EmbedCard({ embed, guildId = null }: EmbedCardProps) {
         <button
           type="button"
           onClick={() => setZoomed(true)}
-          aria-label="Beágyazott kép megnyitása nagyban"
+          aria-label="Open embedded image full size"
           className="block w-full px-3 pb-3"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -100,7 +100,7 @@ export function EmbedCard({ embed, guildId = null }: EmbedCardProps) {
           {embed.footer?.text && embed.timestamp && <span aria-hidden>•</span>}
           {embed.timestamp && (
             <time suppressHydrationWarning dateTime={embed.timestamp} className="font-mono">
-              {new Date(embed.timestamp).toLocaleString("hu-HU")}
+              {new Date(embed.timestamp).toLocaleString("en-US")}
             </time>
           )}
         </div>

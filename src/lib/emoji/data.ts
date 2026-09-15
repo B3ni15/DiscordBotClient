@@ -1,7 +1,7 @@
 /**
  * Compact unicode emoji set, bundled instead of pulled from npm so the static
  * export stays dependency-free. Each entry is "<emoji> <keyword> <keyword>…";
- * keywords are Hungarian first, English second, both are searchable.
+ * every keyword is searchable.
  */
 export interface EmojiEntry {
   char: string;
@@ -10,7 +10,7 @@ export interface EmojiEntry {
 
 export interface EmojiCategory {
   id: string;
-  /** Hungarian category name shown in the picker. */
+  /** Category name shown in the picker. */
   label: string;
   /** Rendered in the category rail. */
   icon: string;
@@ -20,747 +20,746 @@ export interface EmojiCategory {
 const RAW: Array<[id: string, label: string, icon: string, entries: string]> = [
   [
     "smileys",
-    "Arcok és érzelmek",
+    "Smileys & emotion",
     "😀",
-    `😀 vigyor mosoly grin
-😃 mosoly vidam smile
-😄 nevet vidam happy
-😁 vigyor fogak beaming
-😆 rohog nevetes laugh
-😅 izzad nevetes sweat
-🤣 rofl padlo rolling
-😂 sirva nevet joy konny
-🙂 mosoly enyhe slight
-🙃 forditott upside
-😉 kacsint wink
-😊 boldog pir blush
-😇 angyal szent halo
-🥰 szerelmes szivek love
-😍 szivszem heart-eyes
-🤩 csillagszem star-struck
-😘 puszi csok kiss
-😗 csok kiss
-😚 csok kiss
-🥲 konnyes mosoly tear
-😋 nyami finom yum
-😛 nyelv tongue
-😜 kacsint nyelv zany
-🤪 bolond orult crazy
-😝 nyelv squint
-🤑 penz money dollar
-🤗 olel hug
-🤭 kuncog giggle
-🤫 csend halk shush
-🤔 gondolkodik think
-🤐 befogja zipper
-🤨 szemoldok raised-brow
-😐 semleges neutral
-😑 kifejezestelen expressionless
-😶 nema no-mouth
-😏 fanyar smirk
-😒 unott unamused
-🙄 forgatja szemet eyeroll
-😬 fintor grimace
-🤥 hazudik lying pinocchio
-😌 megkonnyebbult relieved
-😔 szomoru pensive
-😪 almos sleepy
-🤤 nyal drool
-😴 alszik sleep zzz
-😷 maszk mask beteg
-🤒 lazas beteg thermometer
-🤕 serult bandage
-🤢 hanyinger nauseated
-🤮 hany vomit
-🤧 tusszent sneeze
-🥵 forro hot
-🥶 fazik cold
-🥴 kabult woozy
-😵 szedul dizzy
-🤯 fejrobbanas mind-blown
-🤠 cowboy kalap
-🥳 bulizik party
-😎 napszemuveg cool sunglasses
-🤓 kocka nerd
-🧐 monokli monocle
-😕 zavart confused
-😟 aggodo worried
-🙁 szomoru frown
-😮 meglepett open-mouth
-😯 hukkent hushed
-😲 dobbent astonished
-😳 elpirul flushed
-🥺 konyorgo pleading
-😦 homlokranc frowning
-😧 gyotort anguished
-😨 fel fearful
-😰 hideg verejtek anxious
-😥 csalodott sad
-😢 sir cry
-😭 zokog sobbing
-😱 sikolt scream
-😖 zavarodott confounded
-😣 kitart persevere
-😞 csalodott disappointed
-😓 verejtek downcast
-😩 kimerult weary
-😫 fáradt tired
-🥱 asit yawn
-😤 dühos triumph gozol
-😡 dühos pouting angry
-😠 merges angry
-🤬 karomkodik cursing
-😈 ordog devil
-👿 ordog imp
-💀 koponya skull halal
-☠️ kalozzaszlo skull-crossbones
-💩 kaki poop
-🤡 bohoc clown
-👻 szellem ghost
-👽 ufo alien
+    `😀 grin smile happy
+😃 smile happy open
+😄 happy laugh smile
+😁 beaming grin teeth
+😆 laugh squint lol
+😅 sweat laugh nervous
+🤣 rofl rolling laugh
+😂 joy tears laugh
+🙂 slight-smile
+🙃 upside-down silly
+😉 wink
+😊 blush happy smile
+😇 angel halo innocent
+🥰 love hearts adore
+😍 heart-eyes love
+🤩 star-struck amazed
+😘 kiss blow-kiss
+😗 kiss
+😚 kiss closed-eyes
+🥲 tear smile happy-cry
+😋 yum tasty delicious
+😛 tongue
+😜 zany wink tongue
+🤪 crazy wild goofy
+😝 squint tongue
+🤑 money dollar rich
+🤗 hug hugging
+🤭 giggle oops
+🤫 shush quiet silence
+🤔 think thinking hmm
+🤐 zipper silent
+🤨 raised-brow skeptical
+😐 neutral
+😑 expressionless blank
+😶 no-mouth speechless
+😏 smirk
+😒 unamused meh
+🙄 eyeroll annoyed
+😬 grimace awkward
+🤥 lying pinocchio
+😌 relieved calm
+😔 pensive sad
+😪 sleepy tired
+🤤 drool
+😴 sleep zzz asleep
+😷 mask sick
+🤒 thermometer sick fever
+🤕 bandage hurt injured
+🤢 nauseated sick
+🤮 vomit puke
+🤧 sneeze
+🥵 hot overheated
+🥶 cold freezing
+🥴 woozy dizzy
+😵 dizzy knocked-out
+🤯 mind-blown shocked
+🤠 cowboy hat
+🥳 party celebrate
+😎 cool sunglasses
+🤓 nerd glasses
+🧐 monocle inspect
+😕 confused
+😟 worried
+🙁 frown sad
+😮 open-mouth surprised
+😯 hushed
+😲 astonished shocked
+😳 flushed embarrassed
+🥺 pleading puppy-eyes
+😦 frowning
+😧 anguished
+😨 fearful scared
+😰 anxious cold-sweat
+😥 sad disappointed
+😢 cry sad tear
+😭 sobbing bawling cry
+😱 scream fear
+😖 confounded
+😣 persevere
+😞 disappointed
+😓 downcast sweat
+😩 weary exhausted
+😫 tired fed-up
+🥱 yawn bored
+😤 triumph steam huff
+😡 pouting angry rage
+😠 angry mad
+🤬 cursing swearing
+😈 devil mischievous
+👿 imp devil angry
+💀 skull dead
+☠️ skull-crossbones danger
+💩 poop
+🤡 clown
+👻 ghost boo
+👽 alien ufo
 🤖 robot bot
-😺 macska cat
-😹 macska nevet
-😻 macska szerelmes
-🙀 macska ijedt
-😿 macska sir
-😾 macska merges`,
+😺 cat grinning
+😹 cat laugh
+😻 cat love heart-eyes
+🙀 cat scared
+😿 cat cry
+😾 cat angry`,
   ],
   [
     "people",
-    "Emberek és kezek",
+    "People & hands",
     "👋",
-    `👋 integet wave szia
-🤚 kez hand
-🖐️ tenyer hand
-✋ megall stop tenyer
-🖖 vulkan spock
-👌 ok rendben
-🤌 csipet olasz pinch
-🤏 kicsi pinch
-✌️ beke victory
-🤞 szorit fingers-crossed
-🤟 szeretlek love-you
-🤘 rock szarv
-🤙 hivj call-me
-👈 balra left
-👉 jobbra right
-👆 fel up
-👇 le down
-☝️ mutat index
-👍 tetszik like thumbs-up
-👎 nem tetszik dislike thumbs-down
-✊ okol fist
-👊 utes punch
-🤛 balokol fist
-🤜 jobbokol fist
-👏 taps clap
-🙌 hurra raised-hands
-👐 nyitott tenyer
-🤲 kerlek palms
-🤝 kezfogas handshake
-🙏 kerlek ima pray thanks
-✍️ ir writing
-💅 korom nail
-🤳 szelfi selfie
-💪 izom muscle biceps
-🦾 protezis mechanical-arm
-🧠 agy brain
-👀 szemek eyes nezes
-👁️ szem eye
-👄 szaj mouth
-🫀 sziv szerv
-🧑 szemely person
-👶 baba baby
-🧒 gyerek child
-👦 fiu boy
-👧 lany girl
-👩 no woman
-👨 ferfi man
-🧔 szakall beard
-👵 nagyi old-woman
-👴 nagypapa old-man
-👮 rendor police
-🕵️ nyomozo detective
-👷 munkas worker
-🤴 herceg prince
-👸 hercegno princess
-🧑‍💻 fejleszto developer programozo
-🧑‍🚀 urhajos astronaut
-🧑‍🍳 szakacs chef
-🦸 szuperhos superhero
-🦹 gonosztevo villain
-🧙 varazslo mage
-🧚 tunder fairy
-🧛 vampir vampire
-🧜 sellő mermaid
+    `👋 wave hi bye
+🤚 hand raised back
+🖐️ hand fingers-splayed
+✋ stop palm hand
+🖖 vulcan spock
+👌 ok perfect
+🤌 pinch italian
+🤏 pinch small tiny
+✌️ peace victory
+🤞 fingers-crossed luck
+🤟 love-you
+🤘 rock horns
+🤙 call-me shaka
+👈 left point
+👉 right point
+👆 up point
+👇 down point
+☝️ index up point
+👍 thumbs-up like yes
+👎 thumbs-down dislike no
+✊ fist raised
+👊 punch fist bump
+🤛 left-fist bump
+🤜 right-fist bump
+👏 clap applause
+🙌 raised-hands praise hooray
+👐 open-hands
+🤲 palms-up please
+🤝 handshake deal
+🙏 pray thanks please
+✍️ writing hand
+💅 nail polish
+🤳 selfie
+💪 muscle biceps strong
+🦾 mechanical-arm prosthetic
+🧠 brain
+👀 eyes looking
+👁️ eye
+👄 mouth lips
+🫀 heart organ anatomical
+🧑 person
+👶 baby
+🧒 child kid
+👦 boy
+👧 girl
+👩 woman
+👨 man
+🧔 beard bearded-person
+👵 old-woman grandma
+👴 old-man grandpa
+👮 police officer cop
+🕵️ detective spy
+👷 worker construction
+🤴 prince
+👸 princess
+🧑‍💻 developer programmer coder
+🧑‍🚀 astronaut
+🧑‍🍳 chef cook
+🦸 superhero hero
+🦹 villain supervillain
+🧙 mage wizard
+🧚 fairy
+🧛 vampire
+🧜 mermaid merperson
 🧝 elf
-🧞 dzsinn genie
-🧟 zombi zombie
-💃 tancos dancer
-🕺 tancol dancing
-🧗 maszik climbing
-🏃 fut running
-🚶 setal walking
-🧍 all standing
-🧎 terdel kneeling
-👫 par couple
-👪 csalad family
-🗣️ beszel speaking
-👤 sziluett silhouette
-🫂 olelkezes hugging`,
+🧞 genie
+🧟 zombie
+💃 dancer dancing woman
+🕺 dancing man
+🧗 climbing climber
+🏃 running run
+🚶 walking walk
+🧍 standing stand
+🧎 kneeling kneel
+👫 couple holding-hands
+👪 family
+🗣️ speaking talking
+👤 silhouette user
+🫂 hugging hug people`,
   ],
   [
     "nature",
-    "Állatok és természet",
+    "Animals & nature",
     "🌿",
-    `🐶 kutya dog kutyus
-🐱 macska cat cica
-🐭 eger mouse
-🐹 hörcsög hamster
-🐰 nyul rabbit
-🦊 roka fox
-🐻 medve bear
+    `🐶 dog puppy
+🐱 cat kitten
+🐭 mouse
+🐹 hamster
+🐰 rabbit bunny
+🦊 fox
+🐻 bear
 🐼 panda
 🐨 koala
-🐯 tigris tiger
-🦁 oroszlan lion
-🐮 tehen cow
-🐷 malac pig
-🐸 beka frog
-🐵 majom monkey
-🙈 nem latom see-no-evil
-🙉 nem hallom hear-no-evil
-🙊 nem mondom speak-no-evil
-🐔 csirke chicken
-🐧 pingvin penguin
-🐦 madar bird
-🦆 kacsa duck
-🦅 sas eagle
-🦉 bagoly owl
-🦇 denever bat
-🐺 farkas wolf
-🐗 vaddiszno boar
-🐴 lo horse
-🦄 egyszarvu unicorn
-🐝 meh bee
-🐛 hernyo bug hiba
-🦋 pillango butterfly
-🐌 csiga snail
-🐞 katica ladybug
-🐜 hangya ant
-🕷️ pok spider
-🦂 skorpio scorpion
-🐢 teknos turtle
-🐍 kigyo snake
-🦎 gyik lizard
-🐙 polip octopus
-🦑 tintahal squid
-🦐 garnela shrimp
-🦀 rak crab
-🐡 gombhal pufferfish
-🐠 hal fish tropical
-🐟 hal fish
-🐬 delfin dolphin
-🐳 balna whale
-🦈 capa shark
-🐊 krokodil crocodile
-🐅 tigris tiger
+🐯 tiger
+🦁 lion
+🐮 cow
+🐷 pig
+🐸 frog
+🐵 monkey
+🙈 see-no-evil monkey
+🙉 hear-no-evil monkey
+🙊 speak-no-evil monkey
+🐔 chicken
+🐧 penguin
+🐦 bird
+🦆 duck
+🦅 eagle
+🦉 owl
+🦇 bat
+🐺 wolf
+🐗 boar
+🐴 horse
+🦄 unicorn
+🐝 bee honeybee
+🐛 bug caterpillar
+🦋 butterfly
+🐌 snail
+🐞 ladybug
+🐜 ant
+🕷️ spider
+🦂 scorpion
+🐢 turtle
+🐍 snake
+🦎 lizard
+🐙 octopus
+🦑 squid
+🦐 shrimp
+🦀 crab
+🐡 pufferfish
+🐠 tropical-fish
+🐟 fish
+🐬 dolphin
+🐳 whale
+🦈 shark
+🐊 crocodile
+🐅 tiger
 🦓 zebra
 🦍 gorilla
-🐘 elefant elephant
-🦏 orrszarvu rhino
-🐪 teve camel
-🦒 zsiraf giraffe
-🐃 bivaly buffalo
-🐄 tehen cow
-🐖 diszno pig
-🐑 barany sheep
-🐐 kecske goat
-🦌 szarvas deer
-🐕 kutya dog
-🐩 pudli poodle
-🐈 macska cat
-🐓 kakas rooster
-🦃 pulyka turkey
-🕊️ galamb dove beke
-🐇 nyul rabbit
-🐁 eger mouse
-🐿️ mokus chipmunk
-🦔 sun hedgehog
-🌵 kaktusz cactus
-🎄 karacsonyfa christmas-tree
-🌲 fenyo evergreen
-🌳 fa tree
-🌴 palma palm
-🌱 palanta seedling
-🌿 novény herb
-☘️ lohere shamrock
-🍀 negylevelu clover szerencse
-🍁 juharlevel maple
-🍂 avar fallen-leaf osz
-🍃 levelek leaves szel
-🌾 kalasz rice
-💐 csokor bouquet
-🌷 tulipan tulip
-🌹 rozsa rose
-🥀 hervadt wilted
-🌺 hibiszkusz hibiscus
-🌸 cseresznyevirag blossom sakura
-🌼 viragszal daisy
-🌻 napraforgo sunflower
-🌞 nap sun
-🌝 holdarc moon
-🌛 hold moon
-🌜 hold moon
-🌚 ujhold new-moon
-🌙 holdsarlo crescent
-⭐ csillag star
-🌟 ragyogo star2
-✨ csillamok sparkles
-⚡ villam zap lightning
-🔥 tuz fire lang
-💥 robbanas boom
-☄️ ustokos comet
-🌈 szivarvany rainbow
-☀️ napsutes sunny
-⛅ felhos partly-cloudy
-☁️ felho cloud
-🌧️ eso rain
-⛈️ vihar storm
-❄️ hopehely snowflake
-⛄ hoember snowman
-💧 csepp droplet
-🌊 hullam wave viz
-🌍 fold earth vilag
-🌋 vulkan volcano
-🏔️ hegy mountain`,
+🐘 elephant
+🦏 rhino
+🐪 camel
+🦒 giraffe
+🐃 buffalo
+🐄 cow
+🐖 pig
+🐑 sheep
+🐐 goat
+🦌 deer
+🐕 dog
+🐩 poodle
+🐈 cat
+🐓 rooster
+🦃 turkey
+🕊️ dove peace
+🐇 rabbit
+🐁 mouse
+🐿️ chipmunk squirrel
+🦔 hedgehog
+🌵 cactus
+🎄 christmas-tree
+🌲 evergreen pine
+🌳 tree
+🌴 palm
+🌱 seedling sprout
+🌿 herb plant
+☘️ shamrock
+🍀 clover luck four-leaf
+🍁 maple leaf
+🍂 fallen-leaf autumn
+🍃 leaves wind
+🌾 rice sheaf
+💐 bouquet flowers
+🌷 tulip
+🌹 rose
+🥀 wilted flower
+🌺 hibiscus
+🌸 blossom sakura cherry
+🌼 daisy flower
+🌻 sunflower
+🌞 sun face
+🌝 moon face
+🌛 moon crescent
+🌜 moon crescent
+🌚 new-moon
+🌙 crescent moon
+⭐ star
+🌟 star2 glowing
+✨ sparkles
+⚡ zap lightning
+🔥 fire flame lit
+💥 boom explosion
+☄️ comet
+🌈 rainbow
+☀️ sunny sun
+⛅ partly-cloudy
+☁️ cloud
+🌧️ rain
+⛈️ storm thunderstorm
+❄️ snowflake snow
+⛄ snowman
+💧 droplet water
+🌊 wave ocean water
+🌍 earth world globe
+🌋 volcano
+🏔️ mountain`,
   ],
   [
     "food",
-    "Étel és ital",
+    "Food & drink",
     "🍕",
-    `🍏 alma apple
-🍎 alma apple
-🍐 korte pear
-🍊 narancs orange
-🍋 citrom lemon
-🍌 banan banana
-🍉 gorogdinnye watermelon
-🍇 szolo grapes
-🍓 eper strawberry
-🫐 afonya blueberry
-🍈 dinnye melon
-🍒 cseresznye cherries
-🍑 oszibarack peach
+    `🍏 green-apple
+🍎 apple
+🍐 pear
+🍊 orange tangerine
+🍋 lemon
+🍌 banana
+🍉 watermelon
+🍇 grapes
+🍓 strawberry
+🫐 blueberry
+🍈 melon
+🍒 cherries
+🍑 peach
 🥭 mango
-🍍 ananasz pineapple
-🥥 kokusz coconut
-🥝 kivi kiwi
-🍅 paradicsom tomato
-🥑 avokado avocado
-🍆 padlizsan eggplant
-🥔 krumpli potato
-🥕 sargarepa carrot
-🌽 kukorica corn
-🌶️ csili chili paprika
-🥒 uborka cucumber
-🥬 salata leafy
-🥦 brokkoli broccoli
-🧄 fokhagyma garlic
-🧅 hagyma onion
-🍄 gomba mushroom
-🥜 mogyoro peanuts
-🌰 gesztenye chestnut
-🍞 kenyer bread
-🥐 croissant kifli
-🥖 bagett baguette
-🥨 perec pretzel
-🧀 sajt cheese
-🥚 tojas egg
-🍳 tukortojas fried-egg
-🥞 palacsinta pancakes
-🧇 gofri waffle
-🥓 bacon szalonna
-🍔 hamburger burger
-🍟 sultkrumpli fries
+🍍 pineapple
+🥥 coconut
+🥝 kiwi
+🍅 tomato
+🥑 avocado
+🍆 eggplant
+🥔 potato
+🥕 carrot
+🌽 corn
+🌶️ chili pepper spicy
+🥒 cucumber
+🥬 leafy greens lettuce
+🥦 broccoli
+🧄 garlic
+🧅 onion
+🍄 mushroom
+🥜 peanuts
+🌰 chestnut
+🍞 bread
+🥐 croissant
+🥖 baguette
+🥨 pretzel
+🧀 cheese
+🥚 egg
+🍳 fried-egg cooking
+🥞 pancakes
+🧇 waffle
+🥓 bacon
+🍔 burger hamburger
+🍟 fries
 🍕 pizza
-🌭 hotdog virsli
-🥪 szendvics sandwich
+🌭 hotdog
+🥪 sandwich
 🌮 taco
 🌯 burrito
-🥙 pita
+🥙 pita wrap
 🧆 falafel
-🥘 serpenyo paella
-🍲 leves stew
-🍜 ramec tesztaleves ramen
-🍝 spagetti spaghetti teszta
-🍛 curry rizs
+🥘 paella pan
+🍲 stew soup
+🍜 ramen noodles
+🍝 spaghetti pasta
+🍛 curry rice
 🍣 sushi
-🍤 rantott garnela tempura
-🍱 bento doboz
-🥟 gomboc dumpling
-🍚 rizs rice
-🍙 rizsgolyo onigiri
-🍥 halrud narutomaki
-🥠 szerencsesuti fortune-cookie
-🍦 fagylalt ice-cream
-🍧 jegkasa shaved-ice
-🍨 fagyi ice-cream
-🍩 fank donut
-🍪 keksz cookie suti
-🎂 torta birthday-cake szulinap
-🍰 sutemeny cake
-🧁 muffin cupcake
-🥧 pite pie
-🍫 csoki chocolate
-🍬 cukorka candy
-🍭 nyalóka lollipop
-🍯 mez honey
-🍼 cumisuveg baby-bottle
-🥛 tej milk
-☕ kave coffee
+🍤 tempura shrimp fried
+🍱 bento box
+🥟 dumpling
+🍚 rice
+🍙 onigiri rice-ball
+🍥 narutomaki fish-cake
+🥠 fortune-cookie
+🍦 ice-cream soft-serve
+🍧 shaved-ice
+🍨 ice-cream
+🍩 donut
+🍪 cookie biscuit
+🎂 birthday-cake
+🍰 cake slice
+🧁 cupcake muffin
+🥧 pie
+🍫 chocolate
+🍬 candy sweet
+🍭 lollipop
+🍯 honey
+🍼 baby-bottle milk
+🥛 milk glass
+☕ coffee
 🍵 tea
-🧃 gyumolcsle juice
-🥤 udito soda pohar
-🍺 sor beer
-🍻 sorozes cheers
-🍷 bor wine
-🥂 pezsgo champagne koccintas
-🍸 koktel cocktail
-🍹 trópusi ital tropical
+🧃 juice box
+🥤 soda cup drink
+🍺 beer
+🍻 cheers beers
+🍷 wine
+🥂 champagne toast
+🍸 cocktail martini
+🍹 tropical drink
 🥃 whisky
-🧊 jegkocka ice
-🍴 evoeszkoz fork-knife
-🥄 kanal spoon
-🍽️ tanyer plate`,
+🧊 ice cube
+🍴 fork-knife cutlery
+🥄 spoon
+🍽️ plate dinner`,
   ],
   [
     "activity",
-    "Tevékenységek",
+    "Activities",
     "⚽",
-    `⚽ foci soccer labda
-🏀 kosarlabda basketball
-🏈 amerikai foci football
+    `⚽ soccer football ball
+🏀 basketball
+🏈 football american
 ⚾ baseball
 🥎 softball
-🎾 tenisz tennis
-🏐 rolabda volleyball
-🏉 rögbi rugby
-🥏 frizbi frisbee
-🎱 biliárd 8ball
-🏓 pingpong ping-pong
-🏸 tollaslabda badminton
-🥅 kapu goal
-🏒 jeghoki hockey
-🏑 gyeplabda field-hockey
+🎾 tennis
+🏐 volleyball
+🏉 rugby
+🥏 frisbee
+🎱 8ball pool billiards
+🏓 ping-pong table-tennis
+🏸 badminton
+🥅 goal net
+🏒 hockey ice-hockey
+🏑 field-hockey
 🥍 lacrosse
-🏏 krikett cricket
+🏏 cricket
 ⛳ golf
-🏹 ijaszat archery
-🎣 horgaszat fishing
-🥊 boksz boxing
-🥋 harcmuveszet martial-arts
-🎽 futotrikó running-shirt
-⛸️ korcsolya skate
-🎿 si ski
-🛷 szanko sled
+🏹 archery bow
+🎣 fishing
+🥊 boxing gloves
+🥋 martial-arts karate
+🎽 running-shirt
+⛸️ skate ice-skating
+🎿 ski
+🛷 sled
 🏂 snowboard
-🏋️ sulyemeles weightlifting
-🤼 birkozas wrestling
-🤸 akrobatika cartwheel
-⛹️ labdapattogtatas bouncing-ball
-🤺 vivas fencing
-🏇 lovaglas horse-racing
-🧘 jóga yoga meditacio
-🏄 szorf surfing
-🏊 uszas swimming
-🤽 vizilabda water-polo
-🚣 evezes rowing
-🧗 sziklamaszas climbing
-🚴 kerekpar cycling
-🚵 hegyi bicikli mountain-biking
-🏆 kupa trophy gyozelem
-🥇 arany gold first
-🥈 ezust silver second
-🥉 bronz bronze third
-🏅 erem medal
-🎖️ kituntetes military-medal
-🎗️ szalag ribbon
-🎫 jegy ticket
-🎟️ belepo admission
-🎪 cirkusz circus
-🎭 szinhaz theater
-🎨 festes art paletta
-🎬 film clapper
-🎤 mikrofon microphone enek
-🎧 fejhallgato headphone zene
-🎼 kotta musical-score
-🎹 zongora piano
-🥁 dob drum
-🎷 szaxofon saxophone
-🎺 trombita trumpet
-🎸 gitar guitar
-🎻 hegedu violin
-🎲 kocka dice jatek
-♟️ sakk chess
-🎯 celtabla dart cel
+🏋️ weightlifting lifting gym
+🤼 wrestling
+🤸 cartwheel gymnastics
+⛹️ bouncing-ball basketball
+🤺 fencing
+🏇 horse-racing jockey
+🧘 yoga meditation
+🏄 surfing surf
+🏊 swimming swim
+🤽 water-polo
+🚣 rowing boat
+🧗 climbing
+🚴 cycling bike
+🚵 mountain-biking
+🏆 trophy win champion
+🥇 gold first medal
+🥈 silver second medal
+🥉 bronze third medal
+🏅 medal sports
+🎖️ military-medal
+🎗️ ribbon awareness
+🎫 ticket
+🎟️ admission ticket
+🎪 circus tent
+🎭 theater drama masks
+🎨 art palette painting
+🎬 clapper movie film
+🎤 microphone sing
+🎧 headphone music
+🎼 musical-score sheet-music
+🎹 piano keyboard
+🥁 drum
+🎷 saxophone
+🎺 trumpet
+🎸 guitar
+🎻 violin
+🎲 dice game
+♟️ chess pawn
+🎯 dart bullseye target
 🎳 bowling
-🎮 jatekvezerlo gaming controller
-🕹️ joystick
-🎰 nyerogep slot
-🧩 puzzle kirako
-🪁 sarkany kite
-🎈 lufi balloon
-🎉 konfetti party tada
-🎊 konfettigömb confetti
-🎁 ajandek gift
-🎏 szélzsák carp
-🎑 holdunnep moon-ceremony
-🧧 piros boritek red-envelope`,
+🎮 gaming controller videogame
+🕹️ joystick arcade
+🎰 slot machine
+🧩 puzzle jigsaw
+🪁 kite
+🎈 balloon
+🎉 party tada celebrate
+🎊 confetti ball
+🎁 gift present
+🎏 carp windsock
+🎑 moon-ceremony
+🧧 red-envelope`,
   ],
   [
     "objects",
-    "Tárgyak és utazás",
+    "Objects & travel",
     "💻",
-    `💻 laptop szamitogep computer
-🖥️ asztali gep desktop
-🖨️ nyomtato printer
-⌨️ billentyuzet keyboard
-🖱️ eger mouse
-💽 lemez disk
-💾 floppy mentes save
+    `💻 laptop computer
+🖥️ desktop computer monitor
+🖨️ printer
+⌨️ keyboard
+🖱️ mouse computer
+💽 disk minidisc
+💾 floppy save
 💿 cd
 📀 dvd
-📱 telefon mobile phone
-☎️ telefon phone
-📞 kagylo receiver
+📱 phone mobile
+☎️ phone telephone
+📞 receiver call
 📟 pager
 📠 fax
-📺 tv televizio
+📺 tv television
 📻 radio
-🎙️ studio mikrofon
-⏱️ stopper stopwatch
-⏰ ebreszto alarm
-⌚ ora watch
-⏳ homokora hourglass
-🔋 akkumulator battery
-🔌 konnektor plug
-💡 otlet bulb lampa
-🔦 zseblampa flashlight
-🕯️ gyertya candle
-🧯 tuzolto extinguisher
-🛢️ olajhordo oil
-💸 penz repul money-wings
-💵 dollar cash
-💴 jen yen
+🎙️ studio microphone
+⏱️ stopwatch timer
+⏰ alarm clock
+⌚ watch
+⏳ hourglass time
+🔋 battery
+🔌 plug power
+💡 bulb idea light
+🔦 flashlight torch
+🕯️ candle
+🧯 extinguisher fire
+🛢️ oil drum barrel
+💸 money-wings spending
+💵 cash dollar
+💴 yen
 💶 euro
-💷 font pound
-💰 penzeszsak moneybag
-💳 bankkartya credit-card
-🧾 szamla receipt
-💎 gyemant gem
-⚖️ merleg scales
-🔧 csavarkulcs wrench
-🔨 kalapacs hammer
-🛠️ szerszamok tools
-⚙️ fogaskerek gear beallitas
-🔩 csavar nut-bolt
-⛓️ lanc chains
-🔒 zar lock zarva
-🔓 nyitott zar unlock
-🔑 kulcs key
-🗝️ regi kulcs old-key
-🚪 ajto door
-🪑 szek chair
-🛏️ agy bed
-🚿 zuhany shower
-🛁 kad bath
-🧹 sepru broom
-🧺 kosar basket
-🧻 wc papir toilet-paper
-🔍 nagyito search kereses
-🔎 nagyito search
-📡 antenna satellite
-📢 hangszoro loudspeaker
-📣 megafon megaphone
-🔔 csengo bell ertesites
-🔕 nema bell no-bell
-📚 konyvek books
-📖 nyitott konyv open-book
-📓 jegyzetfuzet notebook
-📒 fozet ledger
-📄 lap page
-📃 dokumentum document
-📑 konyvjelzok bookmarks
-📊 oszlopdiagram bar-chart
-📈 novekvo chart-up
-📉 csokkeno chart-down
-📋 vagolap clipboard
-📌 gombostu pushpin
-📍 helyszin round-pin
-📎 gemkapocs paperclip
-✂️ ollo scissors
-🗑️ kuka trash torles
-📦 doboz package csomag
-📧 email
-✉️ boritek envelope
-📨 bejovo incoming-mail
-📤 kimeno outbox
-📥 bejovo inbox
-🗂️ mappak card-index
-📁 mappa folder
-📂 nyitott mappa open-folder
-🗓️ naptar calendar
-📅 datum date
-🖊️ toll pen
-✏️ ceruza pencil
-🖌️ ecset paintbrush
-📝 jegyzet memo iras
-🚗 auto car
+💷 pound
+💰 moneybag money
+💳 credit-card
+🧾 receipt invoice
+💎 gem diamond
+⚖️ scales balance justice
+🔧 wrench
+🔨 hammer
+🛠️ tools
+⚙️ gear settings
+🔩 nut-bolt
+⛓️ chains
+🔒 lock locked
+🔓 unlock unlocked
+🔑 key
+🗝️ old-key
+🚪 door
+🪑 chair
+🛏️ bed
+🚿 shower
+🛁 bath tub
+🧹 broom sweep
+🧺 basket laundry
+🧻 toilet-paper
+🔍 search magnify find
+🔎 search magnify
+📡 satellite antenna
+📢 loudspeaker announce
+📣 megaphone shout
+🔔 bell notification
+🔕 no-bell mute
+📚 books
+📖 open-book reading
+📓 notebook
+📒 ledger
+📄 page sheet
+📃 document
+📑 bookmarks tabs
+📊 bar-chart stats
+📈 chart-up growth
+📉 chart-down decline
+📋 clipboard
+📌 pushpin pin
+📍 round-pin location
+📎 paperclip
+✂️ scissors cut
+🗑️ trash delete bin
+📦 package box parcel
+📧 email mail
+✉️ envelope letter
+📨 incoming-mail
+📤 outbox sent
+📥 inbox received
+🗂️ card-index dividers
+📁 folder
+📂 open-folder
+🗓️ calendar
+📅 date calendar
+🖊️ pen
+✏️ pencil
+🖌️ paintbrush
+📝 memo note writing
+🚗 car
 🚕 taxi
-🚌 busz bus
-🚑 mento ambulance
-🚓 rendorauto police-car
-🚒 tuzolto fire-engine
-🏍️ motor motorcycle
-🚲 bicikli bicycle
-🛴 roller scooter
-✈️ repulo airplane
-🚀 raketa rocket inditas
-🛸 ufo
-🚁 helikopter helicopter
-🚢 hajo ship
-⛵ vitorlas sailboat
-🚂 vonat train
-🚇 metro
-🗺️ terkep map
-🧭 iranytu compass
-🏠 haz house
-🏢 iroda office
-🏥 korhaz hospital
+🚌 bus
+🚑 ambulance
+🚓 police-car
+🚒 fire-engine
+🏍️ motorcycle
+🚲 bicycle bike
+🛴 scooter
+✈️ airplane plane
+🚀 rocket launch space
+🛸 ufo flying-saucer
+🚁 helicopter
+🚢 ship boat
+⛵ sailboat
+🚂 train locomotive
+🚇 metro subway
+🗺️ map
+🧭 compass
+🏠 house home
+🏢 office building
+🏥 hospital
 🏦 bank
-🏫 iskola school
-🗼 torony tower
-🗽 szabadsagszobor statue-of-liberty
-⛺ satr tent
-🌃 ejszaka night-city`,
+🏫 school
+🗼 tower
+🗽 statue-of-liberty
+⛺ tent camping
+🌃 night-city`,
   ],
   [
     "symbols",
-    "Szimbólumok",
+    "Symbols",
     "❤️",
-    `❤️ sziv heart szerelem
-🧡 narancs sziv orange-heart
-💛 sarga sziv yellow-heart
-💚 zold sziv green-heart
-💙 kek sziv blue-heart
-💜 lila sziv purple-heart
-🖤 fekete sziv black-heart
-🤍 feher sziv white-heart
-🤎 barna sziv brown-heart
-💔 tort sziv broken-heart
-❣️ felkialto sziv heart-exclamation
-💕 ket sziv two-hearts
-💞 forgo szivek revolving
-💓 dobogo sziv beating
-💗 novekvo sziv growing
-💖 csillogo sziv sparkling
-💘 nyilas sziv cupid
-💝 ajandek sziv gift-heart
-💯 szazalek hundred perfect
-💢 dühjel anger
-💬 buborek speech chat
-💭 gondolat thought
-🗯️ kiabalas right-anger
-💤 alvas zzz
-✅ pipa check kesz ok
-☑️ bejelolve ballot-check
-✔️ pipa heavy-check
-❌ x cross hiba
-❎ x negative-cross
-➕ plusz plus
-➖ minusz minus
-➗ osztas divide
-✖️ szorzas multiply
-❓ kerdojel question
-❔ kerdojel white-question
-❗ felkialtojel exclamation
-❕ felkialtojel white-exclamation
-‼️ ketto felkialto double-exclamation
-⁉️ felkialto kerdo interrobang
-⚠️ figyelmeztetes warning vigyazat
-🚫 tiltva no-entry
-⛔ belepni tilos no-entry-sign
-🔞 tizennyolc no-under-18
-♻️ ujrahasznositas recycle
-🔰 kezdo beginner
-⚜️ liliom fleur-de-lis
-🔱 szigony trident
-📛 nevtabla name-badge
-🔴 piros kor red-circle
-🟠 narancs kor orange-circle
-🟡 sarga kor yellow-circle
-🟢 zold kor green-circle
-🔵 kek kor blue-circle
-🟣 lila kor purple-circle
-⚫ fekete kor black-circle
-⚪ feher kor white-circle
-🟥 piros negyzet red-square
-🟧 narancs negyzet orange-square
-🟨 sarga negyzet yellow-square
-🟩 zold negyzet green-square
-🟦 kek negyzet blue-square
-🟪 lila negyzet purple-square
-⬛ fekete negyzet black-square
-⬜ feher negyzet white-square
-🔶 narancs rombusz diamond
-🔷 kek rombusz diamond
-🔺 piros haromszog triangle-up
-🔻 piros haromszog triangle-down
-▶️ lejatszas play
-⏸️ szunet pause
-⏹️ megallit stop
-⏺️ felvetel record
-⏭️ kovetkezo next
-⏮️ elozo previous
-⏩ elore fast-forward
-⏪ vissza rewind
-🔀 kevert shuffle
-🔁 ismetles repeat
-🔂 egy ismetles repeat-one
-🔼 fel up
-🔽 le down
-⤴️ jobbra fel arrow-up
-⤵️ jobbra le arrow-down
-🔄 frissites refresh sync
+    `❤️ heart love red-heart
+🧡 orange-heart
+💛 yellow-heart
+💚 green-heart
+💙 blue-heart
+💜 purple-heart
+🖤 black-heart
+🤍 white-heart
+🤎 brown-heart
+💔 broken-heart
+❣️ heart-exclamation
+💕 two-hearts
+💞 revolving-hearts
+💓 beating-heart
+💗 growing-heart
+💖 sparkling-heart
+💘 cupid arrow-heart
+💝 gift-heart
+💯 hundred perfect score
+💢 anger symbol
+💬 speech bubble chat
+💭 thought bubble
+🗯️ right-anger shouting
+💤 zzz sleep
+✅ check done ok yes
+☑️ ballot-check
+✔️ heavy-check
+❌ cross x no wrong
+❎ negative-cross
+➕ plus add
+➖ minus subtract
+➗ divide
+✖️ multiply
+❓ question
+❔ white-question
+❗ exclamation
+❕ white-exclamation
+‼️ double-exclamation
+⁉️ interrobang
+⚠️ warning caution
+🚫 no-entry forbidden
+⛔ no-entry-sign blocked
+🔞 no-under-18 adult
+♻️ recycle
+🔰 beginner
+⚜️ fleur-de-lis
+🔱 trident
+📛 name-badge
+🔴 red-circle
+🟠 orange-circle
+🟡 yellow-circle
+🟢 green-circle
+🔵 blue-circle
+🟣 purple-circle
+⚫ black-circle
+⚪ white-circle
+🟥 red-square
+🟧 orange-square
+🟨 yellow-square
+🟩 green-square
+🟦 blue-square
+🟪 purple-square
+⬛ black-square
+⬜ white-square
+🔶 orange-diamond
+🔷 blue-diamond
+🔺 triangle-up red
+🔻 triangle-down red
+▶️ play
+⏸️ pause
+⏹️ stop
+⏺️ record
+⏭️ next skip
+⏮️ previous
+⏩ fast-forward
+⏪ rewind
+🔀 shuffle
+🔁 repeat loop
+🔂 repeat-one
+🔼 up
+🔽 down
+⤴️ arrow-up-right
+⤵️ arrow-down-right
+🔄 refresh sync reload
 🆗 ok
-🆕 uj new
+🆕 new
 🆒 cool
-🆓 ingyenes free
+🆓 free
 🔝 top
-🔜 hamarosan soon
-🔙 vissza back
-♾️ vegtelen infinity
+🔜 soon
+🔙 back
+♾️ infinity
 ©️ copyright
 ®️ registered
 ™️ trademark
 #️⃣ hashtag
-*️⃣ csillag asterisk
-0️⃣ nulla zero
-1️⃣ egy one
-2️⃣ ketto two
-3️⃣ harom three
-4️⃣ negy four
-5️⃣ ot five
-6️⃣ hat six
-7️⃣ het seven
-8️⃣ nyolc eight
-9️⃣ kilenc nine
-🔟 tiz ten`,
+*️⃣ asterisk star
+0️⃣ zero
+1️⃣ one
+2️⃣ two
+3️⃣ three
+4️⃣ four
+5️⃣ five
+6️⃣ six
+7️⃣ seven
+8️⃣ eight
+9️⃣ nine
+🔟 ten`,
   ],
 ];
-
 export const EMOJI_CATEGORIES: EmojiCategory[] = RAW.map(([id, label, icon, entries]) => ({
   id,
   label,
@@ -777,7 +776,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = RAW.map(([id, label, icon, entr
 
 export const ALL_EMOJIS: EmojiEntry[] = EMOJI_CATEGORIES.flatMap((category) => category.emojis);
 
-/** Diacritics are dropped so "dühös" and "duhos" both match. */
+/** Diacritics are dropped so an accented query still matches a plain keyword. */
 function fold(value: string) {
   return value
     .toLowerCase()

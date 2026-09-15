@@ -117,7 +117,7 @@ export async function searchMessages(
       return {
         messages: searchLoaded(loaded, query),
         local: true,
-        reason: "A szerver indexelése még nem készült el.",
+        reason: "Server-side index is not ready yet; showing local results.",
       };
     } catch (error) {
       const forbidden = error instanceof DiscordHTTPError && (error.status === 403 || error.status === 401);
@@ -125,10 +125,10 @@ export async function searchMessages(
         messages: searchLoaded(loaded, query),
         local: true,
         reason: forbidden
-          ? "A Discord keresési végpontja bot tokennel nem érhető el."
+          ? "Discord's search endpoint is not available to bot tokens; showing local results."
           : error instanceof Error
             ? error.message
-            : "Ismeretlen hiba a keresés közben.",
+            : "Search failed for an unknown reason; showing local results.",
       };
     }
   }

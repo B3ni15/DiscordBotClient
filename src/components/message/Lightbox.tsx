@@ -58,7 +58,7 @@ export function Lightbox({ src, alt, name, onClose }: LightboxProps) {
         ref={dialog}
         role="dialog"
         aria-modal="true"
-        aria-label={name ?? alt ?? "Kép megtekintése"}
+        aria-label={name ?? alt ?? "Image viewer"}
         className="flex max-h-full max-w-full flex-col items-center gap-3"
         onClick={(event) => event.stopPropagation()}
       >
@@ -76,7 +76,7 @@ export function Lightbox({ src, alt, name, onClose }: LightboxProps) {
             rel="noreferrer noopener"
             className="text-accent hover:underline"
           >
-            Megnyitás új lapon
+            Open in new tab
           </a>
           <button
             ref={closeButton}
@@ -84,7 +84,7 @@ export function Lightbox({ src, alt, name, onClose }: LightboxProps) {
             onClick={onClose}
             className="rounded border border-line bg-raised px-2 py-1 hover:bg-panel"
           >
-            Bezárás
+            Close
           </button>
         </div>
       </div>

@@ -55,7 +55,7 @@ export function MessageToolbar({
     setPinned(message.pinned ?? false);
   }
 
-  // Notices ("Link másolva") are transient.
+  // Notices ("Link copied") are transient.
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(null), 2500);
@@ -65,9 +65,9 @@ export function MessageToolbar({
   async function handleCopyLink() {
     try {
       await copyMessageLink({ ...message, guild_id: guildId ?? undefined });
-      setNotice("Link másolva");
+      setNotice("Link copied");
     } catch {
-      setNotice("Nem sikerült másolni");
+      setNotice("Could not copy link");
     }
   }
 
@@ -76,10 +76,10 @@ export function MessageToolbar({
     setPinned(next);
     try {
       await togglePin(getRest(), message.channel_id, message.id, pinned);
-      setNotice(next ? "Kitűzve" : "Kitűzés visszavonva");
+      setNotice(next ? "Pinned" : "Unpinned");
     } catch (cause) {
       setPinned(!next);
-      setNotice(cause instanceof Error ? cause.message : "A kitűzés nem sikerült.");
+      setNotice(cause instanceof Error ? cause.message : "Could not change the pin. Try again.");
     }
   }
 
@@ -89,33 +89,33 @@ export function MessageToolbar({
     try {
       await addReaction(getRest(), message.channel_id, message.id, emoji);
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "A reakció nem sikerült.");
+      setNotice(cause instanceof Error ? cause.message : "Could not add the reaction. Try again.");
     }
   }
 
   const actions: ActionDef[] = [
     {
       key: "react",
-      label: "Reakció hozzáadása",
+      label: "Add reaction",
       icon: "☺",
       onRun: () => setPickerOpen((open) => !open),
     },
-    { key: "reply", label: "Válasz", icon: "↩", onRun: () => onReply(message) },
+    { key: "reply", label: "Reply", icon: "↩", onRun: () => onReply(message) },
     ...(isOwn
-      ? [{ key: "edit", label: "Szerkesztés", icon: "✎", onRun: () => onEdit(message) }]
+      ? [{ key: "edit", label: "Edit", icon: "✎", onRun: () => onEdit(message) }]
       : []),
     {
       key: "pin",
-      label: pinned ? "Kitűzés visszavonása" : "Kitűzés",
+      label: pinned ? "Unpin message" : "Pin message",
       icon: "📌",
       onRun: () => void handleTogglePin(),
     },
-    { key: "link", label: "Link másolása", icon: "🔗", onRun: () => void handleCopyLink() },
+    { key: "link", label: "Copy link", icon: "🔗", onRun: () => void handleCopyLink() },
     ...(isOwn
       ? [
           {
             key: "delete",
-            label: "Törlés",
+            label: "Delete",
             icon: "🗑",
             danger: true,
             onRun: () => setConfirmOpen(true),
@@ -143,7 +143,7 @@ export function MessageToolbar({
       <div
         ref={toolbar}
         role="toolbar"
-        aria-label="Üzenet műveletek"
+        aria-label="Message actions"
         onKeyDown={handleKeyDown}
         className={`flex items-center gap-0.5 rounded-md border border-line bg-raised p-0.5 shadow-lg transition-opacity ${
           pickerOpen || confirmOpen

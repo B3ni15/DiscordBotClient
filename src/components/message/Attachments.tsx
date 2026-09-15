@@ -53,7 +53,7 @@ function AttachmentItem({
         onClick={() => setRevealed(true)}
         className="w-fit rounded border border-line bg-raised px-3 py-2 text-xs text-muted hover:bg-panel"
       >
-        Spoiler – kattints a megtekintéshez ({attachment.filename.replace(/^SPOILER_/, "")})
+        Spoiler – click to reveal ({attachment.filename.replace(/^SPOILER_/, "")})
       </button>
     );
   }
@@ -64,7 +64,7 @@ function AttachmentItem({
         type="button"
         onClick={onPreview}
         className="block w-fit max-w-md overflow-hidden rounded border border-line"
-        aria-label={`${attachment.filename} megnyitása nagyban`}
+        aria-label={`Open ${attachment.filename} full size`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -87,7 +87,7 @@ function AttachmentItem({
         src={attachment.url}
         className="max-h-80 w-fit max-w-md rounded border border-line"
       >
-        A böngésződ nem tudja lejátszani ezt a videót.
+        Your browser cannot play this video.
       </video>
     );
   }
@@ -97,7 +97,7 @@ function AttachmentItem({
       <div className="w-fit max-w-md rounded border border-line bg-panel p-2">
         <p className="mb-1 truncate font-mono text-[11px] text-muted">{attachment.filename}</p>
         <audio controls preload="metadata" src={attachment.url} className="w-64 max-w-full">
-          A böngésződ nem tudja lejátszani ezt a hangfájlt.
+          Your browser cannot play this audio file.
         </audio>
       </div>
     );
@@ -164,5 +164,5 @@ export function formatBytes(bytes: number): string {
     unit += 1;
   }
   const rounded = value >= 100 || unit === 0 ? Math.round(value) : Number(value.toFixed(1));
-  return `${rounded.toLocaleString("hu-HU")} ${UNITS[unit]}`;
+  return `${rounded.toLocaleString("en-US")} ${UNITS[unit]}`;
 }

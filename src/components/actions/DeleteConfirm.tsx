@@ -60,7 +60,7 @@ export function DeleteConfirm({ message, onClose, onDeleted }: DeleteConfirmProp
       onDeleted?.();
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "A törlés nem sikerült.");
+      setError(cause instanceof Error ? cause.message : "Could not delete the message. Try again.");
       setBusy(false);
     }
   }
@@ -83,14 +83,14 @@ export function DeleteConfirm({ message, onClose, onDeleted }: DeleteConfirmProp
         className="w-full max-w-sm rounded-lg border border-line bg-raised p-4 shadow-xl"
       >
         <h2 id="delete-confirm-title" className="text-sm font-semibold">
-          Üzenet törlése
+          Delete message
         </h2>
         <p className="mt-1 text-xs text-muted">
-          Biztosan törlöd ezt az üzenetet? A művelet nem vonható vissza.
+          Delete this message? This cannot be undone.
         </p>
 
         <div className="mt-3 max-h-32 overflow-y-auto rounded border border-line bg-panel px-2 py-1.5 text-xs whitespace-pre-wrap">
-          {preview || <span className="text-muted">(nincs szöveges tartalom)</span>}
+          {preview || <span className="text-muted">(no text content)</span>}
         </div>
         <p className="mt-2 font-mono text-[10px] text-muted">{message.id}</p>
 
@@ -107,7 +107,7 @@ export function DeleteConfirm({ message, onClose, onDeleted }: DeleteConfirmProp
             onClick={onClose}
             className="rounded border border-line px-3 py-1.5 text-xs hover:bg-panel"
           >
-            Mégse
+            Cancel
           </button>
           <button
             type="button"
@@ -115,7 +115,7 @@ export function DeleteConfirm({ message, onClose, onDeleted }: DeleteConfirmProp
             disabled={busy}
             className="rounded bg-danger/20 px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger/30 disabled:opacity-60"
           >
-            {busy ? "Törlés…" : "Törlés"}
+            {busy ? "Deleting…" : "Delete message"}
           </button>
         </div>
       </div>

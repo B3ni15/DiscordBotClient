@@ -20,10 +20,10 @@ export function MessageContent({ message }: MessageContentProps) {
     <time
       suppressHydrationWarning
       dateTime={edited}
-      title={`Szerkesztve: ${new Date(edited).toLocaleString("hu-HU")}`}
+      title={`Edited ${new Date(edited).toLocaleString("en-US")}`}
       className="ml-1 align-baseline text-[10px] text-muted"
     >
-      (szerkesztve)
+      (edited)
     </time>
   ) : null;
 
@@ -71,7 +71,7 @@ function ReplyPreview({ message, guildId }: { message: APIMessage; guildId: stri
     return (
       <p className="mb-0.5 flex items-center gap-1 text-xs text-muted">
         <span aria-hidden>↰</span>
-        Az eredeti üzenet nem érhető el.
+        Original message is unavailable.
       </p>
     );
   }
@@ -90,7 +90,7 @@ function ReplyPreview({ message, guildId }: { message: APIMessage; guildId: stri
         {preview ? (
           <Markdown content={preview} guildId={guildId} inline />
         ) : (
-          <span className="italic">csatolmány vagy beágyazott tartalom</span>
+          <span className="italic">attachment or embed</span>
         )}
       </span>
     </div>

@@ -37,7 +37,7 @@ export function MessageEditor({ message, onDone, onSaved, className = "" }: Mess
       return;
     }
     if (!trimmed) {
-      setError("Az üres üzenet helyett töröld az üzenetet.");
+      setError("Message cannot be empty. Delete it instead.");
       return;
     }
     setSaving(true);
@@ -47,7 +47,7 @@ export function MessageEditor({ message, onDone, onSaved, className = "" }: Mess
       onSaved?.(trimmed);
       onDone();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "A szerkesztés nem sikerült.");
+      setError(cause instanceof Error ? cause.message : "Could not save the edit. Try again.");
     } finally {
       setSaving(false);
     }
@@ -71,7 +71,7 @@ export function MessageEditor({ message, onDone, onSaved, className = "" }: Mess
         rows={1}
         value={content}
         disabled={saving}
-        aria-label="Üzenet szerkesztése"
+        aria-label="Edit message"
         onChange={(event) => {
           setContent(event.target.value);
           autoGrow(event.target);
@@ -81,8 +81,8 @@ export function MessageEditor({ message, onDone, onSaved, className = "" }: Mess
       />
       <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
         <span>
-          Enter <span className="text-text">ment</span> · Esc{" "}
-          <span className="text-text">megszakít</span> · Shift+Enter új sor
+          Enter <span className="text-text">saves</span> · Esc{" "}
+          <span className="text-text">cancels</span> · Shift+Enter for a new line
         </span>
         <span className="flex-1" />
         <button
@@ -90,7 +90,7 @@ export function MessageEditor({ message, onDone, onSaved, className = "" }: Mess
           onClick={onDone}
           className="rounded px-2 py-0.5 hover:bg-raised hover:text-text"
         >
-          Mégse
+          Cancel
         </button>
         <button
           type="button"
@@ -98,7 +98,7 @@ export function MessageEditor({ message, onDone, onSaved, className = "" }: Mess
           disabled={saving}
           className="rounded bg-accent/20 px-2 py-0.5 text-accent hover:bg-accent/30 disabled:opacity-60"
         >
-          {saving ? "Mentés…" : "Mentés"}
+          {saving ? "Saving…" : "Save"}
         </button>
       </div>
       {error && (

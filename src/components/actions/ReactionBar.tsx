@@ -65,7 +65,7 @@ export function ReactionBar({ message, onAddReaction, className = "" }: Reaction
         delete next[key];
         return next;
       });
-      setError(cause instanceof Error ? cause.message : "A reakció nem sikerült.");
+      setError(cause instanceof Error ? cause.message : "Could not update the reaction. Try again.");
     }
   }
 
@@ -93,8 +93,8 @@ export function ReactionBar({ message, onAddReaction, className = "" }: Reaction
         <button
           type="button"
           onClick={onAddReaction}
-          aria-label="Reakció hozzáadása"
-          title="Reakció hozzáadása"
+          aria-label="Add reaction"
+          title="Add reaction"
           className="flex h-6 items-center rounded-full border border-line bg-panel px-2 text-xs text-muted hover:border-accent hover:text-text"
         >
           +
@@ -144,12 +144,12 @@ function ReactionPill({
 
   const label = emojiLabel(emoji);
   const tooltip = loading
-    ? "Betöltés…"
+    ? "Loading…"
     : fresh === null
-      ? `${label} — ${count} reakció`
+      ? `${label} — ${count} reactions`
       : fresh.length === 0
-        ? `${label} — nem sikerült lekérni`
-        : `${label}: ${fresh.join(", ")}${count > fresh.length ? ` és még ${count - fresh.length}` : ""}`;
+        ? `${label} — could not load who reacted`
+        : `${label}: ${fresh.join(", ")}${count > fresh.length ? ` and ${count - fresh.length} more` : ""}`;
 
   return (
     <button
@@ -158,7 +158,7 @@ function ReactionPill({
       onMouseEnter={loadNames}
       onFocus={loadNames}
       title={tooltip}
-      aria-label={`${label}, ${count} reakció${mine ? ", te is reagáltál" : ""}`}
+      aria-label={`${label}, ${count} reactions${mine ? ", including you" : ""}`}
       aria-pressed={mine}
       className={`flex h-6 items-center gap-1 rounded-full border px-2 text-xs transition-colors ${
         mine

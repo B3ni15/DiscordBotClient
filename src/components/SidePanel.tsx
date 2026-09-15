@@ -1,5 +1,6 @@
 "use client";
 
+import { CommandsPanel } from "@/components/commands/CommandsPanel";
 import { PinnedPanel } from "@/components/nav/PinnedPanel";
 import { SearchPanel } from "@/components/nav/SearchPanel";
 import { Settings } from "@/components/nav/Settings";
@@ -17,6 +18,7 @@ export function SidePanel() {
       {panel === "pins" && <PinnedPanel onClose={closePanel} />}
       {panel === "search" && <SearchPanel onClose={closePanel} />}
       {panel === "settings" && <Settings onClose={closePanel} />}
+      {panel === "commands" && <CommandsPanel onClose={closePanel} />}
     </aside>
   );
 }

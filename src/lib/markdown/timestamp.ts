@@ -1,19 +1,19 @@
 import type { TimestampStyle } from "./types";
 
-const LOCALE = "hu-HU";
+const LOCALE = "en-US";
 
 const OPTIONS: Record<Exclude<TimestampStyle, "R">, Intl.DateTimeFormatOptions> = {
-  t: { hour: "2-digit", minute: "2-digit" },
-  T: { hour: "2-digit", minute: "2-digit", second: "2-digit" },
+  t: { hour: "numeric", minute: "2-digit" },
+  T: { hour: "numeric", minute: "2-digit", second: "2-digit" },
   d: { year: "numeric", month: "2-digit", day: "2-digit" },
   D: { year: "numeric", month: "long", day: "numeric" },
-  f: { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" },
+  f: { year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" },
   F: {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
   },
 };
@@ -27,7 +27,7 @@ const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["second", 1],
 ];
 
-/** Renders <t:unix:style> the way Discord does, localised to Hungarian. */
+/** Renders <t:unix:style> the way Discord does, localised to English. */
 export function formatTimestamp(unix: number, style: TimestampStyle, now = Date.now()): string {
   const date = new Date(unix * 1000);
   if (Number.isNaN(date.getTime())) return String(unix);

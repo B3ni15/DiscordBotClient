@@ -70,15 +70,15 @@ export function EmojiPicker({ onSelect, onClose, guildId, className = "" }: Emoj
       const matchedUnicode = searchEmojis(needle).map(toPicked);
       const result: Section[] = [];
       if (matchedCustoms.length) {
-        result.push({ id: "custom", label: "Szerver emojik", items: matchedCustoms });
+        result.push({ id: "custom", label: "Server emoji", items: matchedCustoms });
       }
       if (matchedUnicode.length) {
-        result.push({ id: "search", label: "Találatok", items: matchedUnicode });
+        result.push({ id: "search", label: "Results", items: matchedUnicode });
       }
       return result;
     }
     const result: Section[] = [];
-    if (customs.length) result.push({ id: "custom", label: "Szerver emojik", items: customs });
+    if (customs.length) result.push({ id: "custom", label: "Server emoji", items: customs });
     for (const category of EMOJI_CATEGORIES) {
       result.push({
         id: category.id,
@@ -163,7 +163,7 @@ export function EmojiPicker({ onSelect, onClose, guildId, className = "" }: Emoj
     <div
       ref={root}
       role="dialog"
-      aria-label="Emoji választó"
+      aria-label="Emoji picker"
       onKeyDown={handleKeyDown}
       className={`flex h-80 w-[21rem] flex-col overflow-hidden rounded-lg border border-line bg-raised shadow-xl ${className}`}
     >
@@ -173,15 +173,15 @@ export function EmojiPicker({ onSelect, onClose, guildId, className = "" }: Emoj
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Emoji keresése…"
-          aria-label="Emoji keresése"
+          placeholder="Search emoji…"
+          aria-label="Search emoji"
           className="w-full rounded border border-line bg-panel px-2 py-1.5 text-sm outline-none placeholder:text-muted focus:border-accent"
         />
       </div>
 
       <div ref={gridRef} className="flex-1 overflow-y-auto p-2">
         {flat.length === 0 ? (
-          <p className="px-1 py-4 text-center text-xs text-muted">Nincs találat.</p>
+          <p className="px-1 py-4 text-center text-xs text-muted">No emoji matches that search.</p>
         ) : (
           sections.map((section) => (
             <section key={section.id} className="mb-2">
@@ -227,7 +227,7 @@ export function EmojiPicker({ onSelect, onClose, guildId, className = "" }: Emoj
       </div>
 
       <p className="shrink-0 border-t border-line px-2 py-1 font-mono text-[10px] text-muted">
-        ↑↓←→ navigálás · Enter választ · Esc bezár
+        ↑↓←→ move · Enter select · Esc close
       </p>
     </div>
   );

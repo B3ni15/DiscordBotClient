@@ -197,7 +197,7 @@ function Spoiler({ children }: { children: ReactNode }) {
     <button
       type="button"
       onClick={() => setRevealed(true)}
-      aria-label="Spoiler felfedése"
+      aria-label="Reveal spoiler"
       className="rounded bg-raised px-0.5 text-transparent select-none hover:bg-line"
     >
       {children}

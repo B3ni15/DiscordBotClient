@@ -79,23 +79,23 @@ export function SearchPanel({ guildId, channelId, onJump, onClose, className }: 
       setNotice(
         jumpToMessage(message.id)
           ? null
-          : "Az üzenet nincs a kirajzolt előzményben — görgess feljebb a csatornában.",
+          : "That message is not in the rendered history — scroll up in the channel to load it.",
       );
     }, 120);
   }
 
   return (
     <aside
-      aria-label="Keresés"
+      aria-label="Search"
       className={`flex min-h-0 w-80 shrink-0 flex-col border-l border-line bg-panel ${className ?? ""}`}
     >
       <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line px-4">
-        <h2 className="text-xs font-semibold text-muted">Keresés</h2>
+        <h2 className="text-xs font-semibold text-muted">Search</h2>
         {onClose && (
           <button
             type="button"
             onClick={onClose}
-            aria-label="Panel bezárása"
+            aria-label="Close panel"
             className="text-muted hover:text-text"
           >
             ✕
@@ -105,20 +105,20 @@ export function SearchPanel({ guildId, channelId, onJump, onClose, className }: 
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-2 border-b border-line px-4 py-3">
         <label className="flex flex-col gap-1 text-xs text-muted">
-          Szöveg
+          Text
           <input
             value={content}
             onChange={(event) => setContent(event.target.value)}
-            placeholder="Keresett kifejezés"
+            placeholder="Search term"
             className="rounded border border-line bg-raised px-2 py-1.5 text-sm text-text placeholder:text-muted"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted">
-          Szerző (ID vagy név)
+          Author (ID or name)
           <input
             value={author}
             onChange={(event) => setAuthor(event.target.value)}
-            placeholder="pl. 123456789012345678"
+            placeholder="e.g. 123456789012345678"
             className="rounded border border-line bg-raised px-2 py-1.5 font-mono text-sm text-text placeholder:text-muted"
           />
         </label>
@@ -128,19 +128,18 @@ export function SearchPanel({ guildId, channelId, onJump, onClose, className }: 
             checked={onlyThisChannel}
             onChange={(event) => setOnlyThisChannel(event.target.checked)}
           />
-          Csak az aktuális csatornában
+          This channel only
         </label>
         <button
           type="submit"
           disabled={busy}
           className="rounded bg-accent/15 px-3 py-1.5 text-sm text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
         >
-          {busy ? "Keresés…" : "Keresés"}
+          {busy ? "Searching…" : "Search"}
         </button>
         <p className="text-[11px] leading-relaxed text-muted">
-          A Discord szerveroldali keresője bot tokennel nem érhető el, ezért a találatok a már
-          betöltött előzményből származnak. Görgess feljebb a csatornában, ha régebbi üzenetek közt
-          is keresnél.
+          Discord’s server-side search is unavailable to bot tokens, so results come from the
+          already loaded history. Scroll up in the channel to search older messages too.
         </p>
       </form>
 
@@ -148,18 +147,18 @@ export function SearchPanel({ guildId, channelId, onJump, onClose, className }: 
         {notice && <p className="px-2 pb-2 text-xs leading-relaxed text-amber">{notice}</p>}
 
         {outcome === null ? (
-          <p className="px-2 text-xs text-muted">Adj meg keresési feltételt.</p>
+          <p className="px-2 text-xs text-muted">Enter a search term or author to begin.</p>
         ) : (
           <>
             <p className="px-2 pb-2 text-[11px] leading-relaxed text-muted">
-              <span className="font-mono">{outcome.messages.length}</span> találat
+              <span className="font-mono">{outcome.messages.length}</span> results
               {outcome.local
-                ? ` — helyi keresés a betöltött ${loaded.length} üzenet között.`
-                : " — szerveroldali keresés."}
+                ? ` — local search across ${loaded.length} loaded messages.`
+                : " — server-side search."}
               {outcome.reason && <span className="block text-amber">{outcome.reason}</span>}
             </p>
             {outcome.messages.length === 0 ? (
-              <p className="px-2 text-xs leading-relaxed text-muted">Nincs találat.</p>
+              <p className="px-2 text-xs leading-relaxed text-muted">No messages match. Try a shorter term or widen the scope.</p>
             ) : (
               <ul className="flex flex-col gap-1">
                 {outcome.messages.map((message) => {
@@ -181,11 +180,11 @@ export function SearchPanel({ guildId, channelId, onJump, onClose, className }: 
                             dateTime={message.timestamp}
                             className="ml-auto shrink-0 font-mono text-[10px] text-muted"
                           >
-                            {new Date(message.timestamp).toLocaleDateString("hu-HU")}
+                            {new Date(message.timestamp).toLocaleDateString("en-US")}
                           </time>
                         </span>
                         <span className="mt-0.5 line-clamp-3 block text-xs leading-relaxed break-words text-muted">
-                          {message.content || "(nincs szöveges tartalom)"}
+                          {message.content || "(no text content)"}
                         </span>
                       </button>
                     </li>

@@ -6,6 +6,7 @@ import { MessageEditor } from "@/components/actions/MessageEditor";
 import { MessageToolbar } from "@/components/actions/MessageToolbar";
 import { ReactionBar } from "@/components/actions/ReactionBar";
 import { MessageContent } from "@/components/message/MessageContent";
+import { ThreadCreate } from "@/components/nav/ThreadCreate";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
@@ -36,6 +37,8 @@ function ChannelView({ channelId }: { channelId: string }) {
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<APIMessage | null>(null);
+  const [creatingThread, setCreatingThread] = useState(false);
+  const selectChannel = useClient((state) => state.selectChannel);
 
   // Keep the newest message in view unless the reader scrolled up.
   useLayoutEffect(() => {
@@ -67,10 +70,29 @@ function ChannelView({ channelId }: { channelId: string }) {
         </span>
         <h2 className="truncate text-sm font-semibold">{channelName}</h2>
         <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setCreatingThread(true)}
+            title="New thread"
+            aria-label="New thread"
+            className="grid h-8 w-8 place-items-center rounded text-base text-muted transition-colors hover:bg-raised hover:text-text"
+          >
+            ⌥
+          </button>
           <HeaderButton panel="pins" label="Pinned messages" glyph="⚑" />
           <HeaderButton panel="search" label="Search" glyph="⌕" />
         </div>
       </header>
+
+      {creatingThread && (
+        <div className="border-b border-line bg-panel px-4 py-3">
+          <ThreadCreate
+            channelId={channelId}
+            onCreated={(threadId) => void selectChannel(threadId)}
+            onClose={() => setCreatingThread(false)}
+          />
+        </div>
+      )}
 
       <div ref={scroller} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4">
         {messages === undefined ? (

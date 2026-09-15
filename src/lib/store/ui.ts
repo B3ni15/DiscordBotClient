@@ -3,7 +3,7 @@
 import { create } from "zustand";
 
 /** Which of the mutually exclusive right-hand panels is open. */
-export type SidePanel = "pins" | "search" | "settings" | null;
+export type SidePanel = "pins" | "search" | "settings" | "commands" | null;
 
 interface UIState {
   panel: SidePanel;

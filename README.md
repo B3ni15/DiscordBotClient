@@ -1,51 +1,89 @@
 # disbotclient
 
-Discord kliens a botodhoz, ami teljes egészében a böngészőben fut.
+A Discord client for your bot that runs entirely in the browser.
 [disbotclient.xyz](https://disbotclient.xyz)
 
-Nincs backend. A bot tokened a böngésződ `localStorage`-ában marad, a kérések
-közvetlenül a Discord API-jához mennek — se proxy, se adatbázis, se naplózás.
+There is no backend. Your bot token stays in the browser's `localStorage` and
+every request goes straight to Discord — no proxy, no database, no logging.
 
-## Mit tud
-
-- Szerverek, csatornák, üzenetelőzmény
-- Élő események a Discord gatewayen (új üzenet, szerkesztés, törlés, reakció, gépelés)
-- Üzenetküldés csatolmánnyal
-- Taglista
-
-## Futtatás
+## Run it
 
 ```bash
 npm install
 npm run dev
 ```
 
-Statikus build (bárhol elfut, ami fájlokat szolgál ki):
+Static build, deployable to anything that serves files:
 
 ```bash
 npm run build   # -> out/
 ```
 
-## Token
+## Your token
 
-A tokent a [Developer Portal](https://discord.com/developers/applications) Bot
-fülén találod. Ugyanott kapcsold be a `MESSAGE CONTENT` és `SERVER MEMBERS`
-intentet, különben az üzenetek szövege üresen érkezik és a taglista üres marad.
-Ha egyik sincs bekapcsolva, a kliens automatikusan a privilegizált intentek
-nélkül csatlakozik.
+Find it on the Bot tab of the
+[Developer Portal](https://discord.com/developers/applications). Turn on the
+`MESSAGE CONTENT` and `SERVER MEMBERS` intents there as well, or message text
+arrives empty and the member list stays empty. If neither is enabled, the
+client connects without privileged intents instead of failing.
 
-Csak **bot** tokent használj. A felhasználói fiók tokenje ("selfbot") sérti a
-Discord felhasználási feltételeit, és a kliens nem is támogatja.
+Use a **bot** token only. A user account token ("selfbot") violates Discord's
+terms of service, and this client does not support it.
 
-## Korlátok
+## What works
 
-Ezek a bot tokenből következnek, nem a kliensből:
+**Messages**
+- Servers, channels grouped by category, message history with infinite
+  scroll-back
+- Live gateway events: new messages, edits, deletes, reactions, typing
+- Full Discord markdown — bold, italic, underline, strikethrough, inline and
+  fenced code, blockquotes, lists, headers, subtext, spoilers
+- Mentions with role colours, `<t:…>` timestamps, custom and animated emoji
+- Embeds, attachments, image lightbox, video and audio playback
+- Send, reply, edit, delete, pin; file uploads
+- Reactions with an emoji picker that includes the server's own emoji
 
-- Nincs DM-lista; DM-et csak felhasználói azonosítóval lehet nyitni
-- Nincs szerver oldali üzenetkeresés
-- A bot csak azokat a szervereket látja, ahová meghívtad
-- Hangcsatorna egyelőre nincs
+**Navigation**
+- Threads: browse the active ones, create new threads
+- Pinned messages
+- Search — tries Discord's search endpoint, falls back to searching the
+  history already loaded when the bot token is rejected (see limits below)
+- Direct messages opened by user ID, remembered locally
+- Member list grouped by hoisted role, with role colours and a user card
 
-## Licenc
+**Bot tooling**
+- Slash command management: list, create, edit and delete global and
+  server-scoped commands
+- Interaction inbox: see incoming slash command invocations, reply within the
+  three-second window or defer and send a follow-up
+- Desktop notifications with per-channel and per-server mute, unread badges
+
+## Limits
+
+These come from the bot token, not from this client:
+
+- No DM list; direct messages can only be opened with a user ID
+- No server-side message search, so search falls back to loaded history
+- The bot only sees servers it has been invited to
+- No presence (online/offline) unless the `PRESENCE INTENT` is enabled
+- No voice
+
+## Not built yet
+
+- **Voice channels.** Possible in a browser — Discord's own web client uses the
+  voice gateway's WebRTC mode rather than raw UDP — but that mode is
+  undocumented, so it is deliberately a separate step.
+- Message components (buttons, select menus) on incoming interactions
+- Modal interaction responses
+- Guild and channel management (roles, permissions, invites)
+- Stickers and polls
+
+## Stack
+
+Next.js (App Router, static export), TypeScript, Tailwind, Zustand. The REST
+and gateway clients are written for this project; the markdown parser and the
+emoji picker have no third-party dependencies.
+
+## License
 
 MIT

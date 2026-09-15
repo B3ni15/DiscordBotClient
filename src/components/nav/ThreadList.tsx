@@ -53,7 +53,7 @@ export function ThreadList({ channelId, guildId, onSelect, className }: ThreadLi
         setLoaded({
           key,
           threads: [],
-          error: cause instanceof Error ? cause.message : "Nem sikerült lekérni a threadeket.",
+          error: cause instanceof Error ? cause.message : "Could not load threads. Try refreshing.",
         });
       }
     })();
@@ -71,7 +71,7 @@ export function ThreadList({ channelId, guildId, onSelect, className }: ThreadLi
     try {
       await navApi.joinThread(getRest(), threadId);
     } catch (cause) {
-      setJoinError(cause instanceof Error ? cause.message : "A csatlakozás nem sikerült.");
+      setJoinError(cause instanceof Error ? cause.message : "Could not join the thread. Try again.");
     } finally {
       setJoining(null);
     }
@@ -89,17 +89,17 @@ export function ThreadList({ channelId, guildId, onSelect, className }: ThreadLi
 
   return (
     <section
-      aria-label="Threadek"
+      aria-label="Threads"
       className={`flex min-h-0 flex-col bg-panel ${className ?? ""}`}
     >
       <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line px-4">
-        <h2 className="text-xs font-semibold text-muted">Threadek</h2>
+        <h2 className="text-xs font-semibold text-muted">Threads</h2>
         <button
           type="button"
           onClick={() => setNonce((value) => value + 1)}
           className="text-xs text-accent hover:underline"
         >
-          Frissítés
+          Refresh
         </button>
       </header>
 
@@ -107,12 +107,12 @@ export function ThreadList({ channelId, guildId, onSelect, className }: ThreadLi
         {error && <p className="px-2 pb-2 text-xs leading-relaxed text-danger">{error}</p>}
 
         {!guild ? (
-          <p className="px-2 text-xs text-muted">Válassz szervert.</p>
+          <p className="px-2 text-xs text-muted">Select a server to see its threads.</p>
         ) : loading ? (
-          <p className="px-2 text-xs text-muted">Threadek betöltése…</p>
+          <p className="px-2 text-xs text-muted">Loading threads…</p>
         ) : visible.length === 0 ? (
           <p className="px-2 text-xs leading-relaxed text-muted">
-            Ebben a csatornában nincs aktív thread. Az archivált threadek nem jelennek meg.
+            No active threads in this channel. Archived threads are not listed.
           </p>
         ) : (
           <ul>
@@ -145,10 +145,10 @@ export function ThreadList({ channelId, guildId, onSelect, className }: ThreadLi
                     type="button"
                     onClick={() => void join(thread.id)}
                     disabled={joining === thread.id}
-                    title="A bot csatlakozik a threadhez"
+                    title="Join this thread as the bot"
                     className="shrink-0 rounded px-1.5 py-1 text-[11px] text-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
                   >
-                    {joining === thread.id ? "…" : "Csatlakozás"}
+                    {joining === thread.id ? "…" : "Join"}
                   </button>
                 </li>
               );

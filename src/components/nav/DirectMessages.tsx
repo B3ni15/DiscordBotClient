@@ -33,7 +33,7 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
     event.preventDefault();
     const recipientId = userId.trim();
     if (!/^\d{15,}$/.test(recipientId)) {
-      setError("Adj meg egy érvényes felhasználói ID-t (csak számjegyek).");
+      setError("Enter a valid user ID (digits only).");
       return;
     }
     setBusy(true);
@@ -54,8 +54,8 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
     } catch (cause) {
       setError(
         cause instanceof Error
-          ? `Nem sikerült megnyitni a DM-et: ${cause.message}`
-          : "Nem sikerült megnyitni a DM-et.",
+          ? `Could not open the DM: ${cause.message}`
+          : "Could not open the DM.",
       );
     } finally {
       setBusy(false);
@@ -73,16 +73,16 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
 
   return (
     <section
-      aria-label="Közvetlen üzenetek"
+      aria-label="Direct messages"
       className={`flex min-h-0 w-60 shrink-0 flex-col border-r border-line bg-panel ${className ?? ""}`}
     >
       <header className="flex h-12 shrink-0 items-center border-b border-line px-4">
-        <h2 className="text-sm font-semibold">Közvetlen üzenetek</h2>
+        <h2 className="text-sm font-semibold">Direct messages</h2>
       </header>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-2 border-b border-line px-3 py-3">
         <label className="flex flex-col gap-1 text-xs text-muted">
-          Felhasználó ID
+          User ID
           <input
             value={userId}
             onChange={(event) => setUserId(event.target.value)}
@@ -96,7 +96,7 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
           disabled={busy}
           className="rounded bg-accent/15 px-3 py-1.5 text-sm text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
         >
-          {busy ? "Megnyitás…" : "DM megnyitása"}
+          {busy ? "Opening…" : "Open DM"}
         </button>
         {error && <p className="text-xs leading-relaxed text-danger">{error}</p>}
       </form>
@@ -104,10 +104,10 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         {entries.length === 0 ? (
           <p className="px-2 text-xs leading-relaxed text-muted">
-            Bot tokennel a Discord nem ad vissza DM-listát, ezért itt csak azok a beszélgetések
-            jelennek meg, amiket te nyitottál meg. A megnyitott DM-ek a böngésző
-            <span className="font-mono text-amber"> localStorage</span>-ában maradnak
-            (<span className="font-mono">disbotclient:dms</span>).
+            Discord gives bot tokens no DM list, so only the conversations you open here show up.
+            Opened DMs are kept in this browser’s
+            <span className="font-mono text-amber"> localStorage</span>
+            (<span className="font-mono">disbotclient:dms</span>). Enter a user ID above to start one.
           </p>
         ) : (
           <ul>
@@ -138,7 +138,7 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
                   <button
                     type="button"
                     onClick={() => remove(entry.channelId)}
-                    aria-label="Eltávolítás a listából"
+                    aria-label="Remove from list"
                     className="shrink-0 px-1.5 py-1 text-xs text-muted opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
                   >
                     ✕

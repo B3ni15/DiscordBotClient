@@ -51,7 +51,7 @@ export function PinnedPanel({ channelId, onJump, onClose, className }: PinnedPan
           key,
           messages: [],
           error:
-            cause instanceof Error ? cause.message : "Nem sikerült lekérni a pinelt üzeneteket.",
+            cause instanceof Error ? cause.message : "Could not load pinned messages. Try refreshing.",
         });
       }
     })();
@@ -72,30 +72,30 @@ export function PinnedPanel({ channelId, onJump, onClose, className }: PinnedPan
     setNotice(
       jumpToMessage(message.id)
         ? null
-        : "Az üzenet nincs a betöltött előzményben — görgess feljebb, majd próbáld újra.",
+        : "That message is not in the loaded history — scroll up to load more, then try again.",
     );
   }
 
   return (
     <aside
-      aria-label="Pinelt üzenetek"
+      aria-label="Pinned messages"
       className={`flex min-h-0 w-72 shrink-0 flex-col border-l border-line bg-panel ${className ?? ""}`}
     >
       <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line px-4">
-        <h2 className="text-xs font-semibold text-muted">Pinelt üzenetek</h2>
+        <h2 className="text-xs font-semibold text-muted">Pinned messages</h2>
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setNonce((value) => value + 1)}
             className="text-xs text-accent hover:underline"
           >
-            Frissítés
+            Refresh
           </button>
           {onClose && (
             <button
               type="button"
               onClick={onClose}
-              aria-label="Panel bezárása"
+              aria-label="Close panel"
               className="text-muted hover:text-text"
             >
               ✕
@@ -111,12 +111,12 @@ export function PinnedPanel({ channelId, onJump, onClose, className }: PinnedPan
         {notice && <p className="px-2 pb-2 text-xs leading-relaxed text-amber">{notice}</p>}
 
         {!target ? (
-          <p className="px-2 text-xs text-muted">Válassz csatornát.</p>
+          <p className="px-2 text-xs text-muted">Select a channel to see its pins.</p>
         ) : loading ? (
-          <p className="px-2 text-xs text-muted">Betöltés…</p>
+          <p className="px-2 text-xs text-muted">Loading…</p>
         ) : current!.messages.length === 0 ? (
           <p className="px-2 text-xs leading-relaxed text-muted">
-            Ebben a csatornában nincs pinelt üzenet.
+            No pinned messages in this channel. Pin one from a message’s actions.
           </p>
         ) : (
           <ul className="flex flex-col gap-1">
@@ -142,11 +142,11 @@ export function PinnedPanel({ channelId, onJump, onClose, className }: PinnedPan
                         dateTime={message.timestamp}
                         className="shrink-0 font-mono text-[10px] text-muted"
                       >
-                        {new Date(message.timestamp).toLocaleDateString("hu-HU")}
+                        {new Date(message.timestamp).toLocaleDateString("en-US")}
                       </time>
                     </span>
                     <span className="mt-0.5 line-clamp-3 block text-xs leading-relaxed break-words text-muted">
-                      {message.content || "(nincs szöveges tartalom)"}
+                      {message.content || "(no text content)"}
                     </span>
                   </span>
                 </button>

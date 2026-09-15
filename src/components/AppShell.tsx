@@ -1,6 +1,7 @@
 "use client";
 
 import { DirectMessages } from "@/components/nav/DirectMessages";
+import { useNotifications } from "@/lib/notifications/useNotifications";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
 import { ChannelSidebar } from "./ChannelSidebar";
@@ -15,6 +16,8 @@ export function AppShell() {
   const dmMode = useUI((state) => state.dmMode);
   const panelOpen = useUI((state) => state.panel !== null);
   const selectChannel = useClient((state) => state.selectChannel);
+
+  useNotifications();
 
   return (
     <div className="flex h-screen flex-col">
