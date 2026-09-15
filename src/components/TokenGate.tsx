@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useClient } from "@/lib/store/client";
+
+const subscribeToHydration = () => () => {};
+const getClientHydrationSnapshot = () => true;
+const getServerHydrationSnapshot = () => false;
 
 /** Login screen: takes a bot token and hands it to the store. */
 export function TokenGate() {
@@ -9,6 +13,11 @@ export function TokenGate() {
   const error = useClient((state) => state.error);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
+  const hydrated = useSyncExternalStore(
+    subscribeToHydration,
+    getClientHydrationSnapshot,
+    getServerHydrationSnapshot,
+  );
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -44,7 +53,7 @@ export function TokenGate() {
           />
           <button
             type="submit"
-            disabled={busy || !token.trim()}
+            disabled={!hydrated || busy || !token.trim()}
             className="mt-4 w-full rounded-md bg-accent px-3 py-2 text-sm font-semibold text-ink transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy ? "Connecting…" : "Connect"}
