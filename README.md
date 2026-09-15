@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# disbotclient
 
-## Getting Started
+Discord kliens a botodhoz, ami teljes egészében a böngészőben fut.
+[disbotclient.xyz](https://disbotclient.xyz)
 
-First, run the development server:
+Nincs backend. A bot tokened a böngésződ `localStorage`-ában marad, a kérések
+közvetlenül a Discord API-jához mennek — se proxy, se adatbázis, se naplózás.
+
+## Mit tud
+
+- Szerverek, csatornák, üzenetelőzmény
+- Élő események a Discord gatewayen (új üzenet, szerkesztés, törlés, reakció, gépelés)
+- Üzenetküldés csatolmánnyal
+- Taglista
+
+## Futtatás
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Statikus build (bárhol elfut, ami fájlokat szolgál ki):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build   # -> out/
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Token
 
-## Learn More
+A tokent a [Developer Portal](https://discord.com/developers/applications) Bot
+fülén találod. Ugyanott kapcsold be a `MESSAGE CONTENT` és `SERVER MEMBERS`
+intentet, különben az üzenetek szövege üresen érkezik és a taglista üres marad.
+Ha egyik sincs bekapcsolva, a kliens automatikusan a privilegizált intentek
+nélkül csatlakozik.
 
-To learn more about Next.js, take a look at the following resources:
+Csak **bot** tokent használj. A felhasználói fiók tokenje ("selfbot") sérti a
+Discord felhasználási feltételeit, és a kliens nem is támogatja.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Korlátok
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Ezek a bot tokenből következnek, nem a kliensből:
 
-## Deploy on Vercel
+- Nincs DM-lista; DM-et csak felhasználói azonosítóval lehet nyitni
+- Nincs szerver oldali üzenetkeresés
+- A bot csak azokat a szervereket látja, ahová meghívtad
+- Hangcsatorna egyelőre nincs
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Licenc
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
