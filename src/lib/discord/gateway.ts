@@ -1,4 +1,9 @@
-import { DEFAULT_INTENTS, FALLBACK_INTENTS, GATEWAY_URL } from "./constants";
+import {
+  DEFAULT_INTENTS,
+  FALLBACK_INTENTS,
+  GATEWAY_URL,
+  GatewayIntent,
+} from "./constants";
 
 export const GatewayOpcode = {
   Dispatch: 0,
@@ -62,6 +67,7 @@ export class GatewayClient {
   #resumeUrl: string | null = null;
   #ackPending = false;
   #intents = DEFAULT_INTENTS;
+  #presenceFallbackAttempted = false;
   #reconnectAttempts = 0;
   #closedByUser = false;
   #listeners: { [K in keyof GatewayEvents]: Set<GatewayEvents[K]> } = {
@@ -174,6 +180,15 @@ export class GatewayClient {
 
     if (event.code === 4014) {
       // Privileged intents are not enabled for this bot - retry without them.
+      if (!this.#presenceFallbackAttempted) {
+        // Keep presence when it is enabled even if another privileged intent is not.
+        this.#presenceFallbackAttempted = true;
+        this.#intents = FALLBACK_INTENTS | GatewayIntent.GuildPresences;
+        this.#sessionId = null;
+        this.#lastSequence = null;
+        this.#scheduleReconnect(0);
+        return;
+      }
       if (this.#intents !== FALLBACK_INTENTS) {
         this.#intents = FALLBACK_INTENTS;
         this.#sessionId = null;
