@@ -75,7 +75,7 @@ export const useClient = create<ClientState>((set, get) => ({
   selectedChannelId: null,
 
   getRest: () => {
-    if (!rest) throw new Error("Nincs bejelentkezve.");
+    if (!rest) throw new Error("Not signed in.");
     return rest;
   },
   getGateway: () => gateway,
@@ -94,7 +94,7 @@ export const useClient = create<ClientState>((set, get) => ({
       user = await api.currentUser(rest);
     } catch {
       rest = null;
-      set({ status: "idle", error: "Érvénytelen token, vagy a Discord elutasította a kérést." });
+      set({ status: "idle", error: "Discord rejected this token. Check that you copied the bot token." });
       return;
     }
 
@@ -369,7 +369,7 @@ function handleDispatch(
       const data = raw as GatewayTypingStartDispatchData;
       if (data.user_id === get().user?.id) break;
       const name =
-        data.member?.nick ?? data.member?.user?.global_name ?? data.member?.user?.username ?? "Valaki";
+        data.member?.nick ?? data.member?.user?.global_name ?? data.member?.user?.username ?? "Someone";
       set((state) => {
         const current = (state.typingByChannel[data.channel_id] ?? []).filter(
           (entry) => entry.userId !== data.user_id,

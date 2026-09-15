@@ -16,12 +16,12 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "disbotclient",
-  description: "Discord bot kliens, ami teljesen a böngészőben fut. A token nem hagyja el a géped.",
+  description: "A Discord bot client that runs entirely in your browser. Your token never leaves your machine.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="hu">
+    <html lang="en">
       <body className={`${plexSans.variable} ${plexMono.variable} antialiased`}>{children}</body>
     </html>
   );

@@ -24,8 +24,8 @@ export function TokenGate() {
       <div className="w-full max-w-md">
         <h1 className="font-mono text-2xl font-medium tracking-tight">disbotclient</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted">
-          Discord kliens a botodhoz, ami teljes egészében a böngészőben fut. Nincs szerver a
-          háttérben: a token a gépeden marad, a kérések közvetlenül a Discordhoz mennek.
+          A Discord client for your bot that runs entirely in the browser. There is no server
+          behind it: your token stays on this machine and every request goes straight to Discord.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-8">
@@ -47,7 +47,7 @@ export function TokenGate() {
             disabled={busy || !token.trim()}
             className="mt-4 w-full rounded-md bg-accent px-3 py-2 text-sm font-semibold text-ink transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {busy ? "Csatlakozás…" : "Csatlakozás"}
+            {busy ? "Connecting…" : "Connect"}
           </button>
         </form>
 
@@ -59,7 +59,7 @@ export function TokenGate() {
 
         <div className="mt-10 border-t border-line pt-6 text-sm leading-relaxed text-muted">
           <p>
-            A tokent a{" "}
+            Find the token on the Bot tab of the{" "}
             <a
               className="text-accent hover:underline"
               href="https://discord.com/developers/applications"
@@ -67,11 +67,10 @@ export function TokenGate() {
               rel="noreferrer"
             >
               Developer Portal
-            </a>{" "}
-            Bot fülén találod. Ugyanott kapcsold be a{" "}
-            <span className="font-mono text-amber">MESSAGE CONTENT</span> és{" "}
-            <span className="font-mono text-amber">SERVER MEMBERS</span> intentet, különben az
-            üzenetek szövege üresen érkezik.
+            </a>
+            . Turn on the <span className="font-mono text-amber">MESSAGE CONTENT</span> and{" "}
+            <span className="font-mono text-amber">SERVER MEMBERS</span> intents there too, or
+            message text arrives empty.
           </p>
         </div>
       </div>

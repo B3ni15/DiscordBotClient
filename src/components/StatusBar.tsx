@@ -3,12 +3,12 @@
 import { useClient } from "@/lib/store/client";
 
 const LABELS: Record<string, string> = {
-  idle: "Nincs kapcsolat",
-  connecting: "Csatlakozás a gatewayhez…",
-  identifying: "Azonosítás…",
-  ready: "Kapcsolódva",
-  reconnecting: "Újracsatlakozás…",
-  closed: "A kapcsolat lezárult",
+  idle: "Not connected",
+  connecting: "Connecting to the gateway…",
+  identifying: "Identifying…",
+  ready: "Connected",
+  reconnecting: "Reconnecting…",
+  closed: "Connection closed",
 };
 
 /** Shown only while the gateway is not ready, so it never becomes wallpaper. */
@@ -25,7 +25,7 @@ export function StatusBar() {
       <span className={error ? "text-danger" : "text-muted"}>{error ?? LABELS[status]}</span>
       {(status === "closed" || error) && (
         <button type="button" onClick={logout} className="text-accent hover:underline">
-          Kijelentkezés
+          Sign out
         </button>
       )}
     </div>

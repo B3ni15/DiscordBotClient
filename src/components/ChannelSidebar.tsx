@@ -23,7 +23,7 @@ export function ChannelSidebar() {
   return (
     <div className="flex w-60 shrink-0 flex-col border-r border-line bg-panel">
       <header className="flex h-12 shrink-0 items-center border-b border-line px-4">
-        <h2 className="truncate text-sm font-semibold">{guild?.name ?? "Válassz szervert"}</h2>
+        <h2 className="truncate text-sm font-semibold">{guild?.name ?? "Pick a server"}</h2>
       </header>
 
       <div className="flex-1 overflow-y-auto px-2 py-3">

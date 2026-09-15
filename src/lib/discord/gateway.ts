@@ -38,11 +38,11 @@ export interface GatewayEvents {
 
 /** Close codes that mean reconnecting is pointless without user action. */
 const FATAL_CLOSE_CODES: Record<number, string> = {
-  4004: "Érvénytelen token.",
-  4010: "Érvénytelen shard.",
-  4011: "A bot túl nagy, sharding kellene.",
-  4012: "Érvénytelen gateway verzió.",
-  4013: "Érvénytelen intent érték.",
+  4004: "Invalid token.",
+  4010: "Invalid shard.",
+  4011: "This bot is in too many servers and needs sharding.",
+  4012: "Unsupported gateway version.",
+  4013: "Invalid intents value.",
 };
 
 /**
@@ -181,7 +181,7 @@ export class GatewayClient {
         this.#scheduleReconnect(0);
         return;
       }
-      this.#fail("A bot nem kapta meg a szükséges intenteket a Developer Portalon.");
+      this.#fail("Discord rejected the requested intents. Enable them on the Developer Portal.");
       return;
     }
 

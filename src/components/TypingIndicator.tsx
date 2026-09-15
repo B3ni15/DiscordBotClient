@@ -21,10 +21,10 @@ export function TypingIndicator({ channelId }: { channelId: string }) {
   const names = active.map((entry) => entry.name);
   const label =
     names.length === 1
-      ? `${names[0]} gépel…`
+      ? `${names[0]} is typing…`
       : names.length <= 3
-        ? `${names.join(", ")} gépelnek…`
-        : "Többen gépelnek…";
+        ? `${names.join(", ")} are typing…`
+        : "Several people are typing…";
 
   return (
     <p aria-live="polite" className="h-5 px-4 text-xs text-muted">

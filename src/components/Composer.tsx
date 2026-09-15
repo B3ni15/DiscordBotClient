@@ -44,7 +44,7 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
       setFiles([]);
       if (textarea.current) textarea.current.style.height = "auto";
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Nem sikerült elküldeni az üzenetet.");
+      setError(cause instanceof Error ? cause.message : "The message could not be sent.");
     } finally {
       setSending(false);
     }
@@ -74,17 +74,17 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
       {replyTo && (
         <div className="flex items-center gap-2 rounded-t-lg border border-b-0 border-line bg-raised px-3 py-1.5 text-xs text-muted">
           <span className="truncate">
-            Válasz erre:{" "}
+            Replying to{" "}
             <span className="text-text">
               {replyTo.author.global_name ?? replyTo.author.username}
             </span>
-            {files.length > 0 && " — csatolmánnyal együtt sima üzenetként megy ki"}
+            {files.length > 0 && " — sent as a plain message because it has attachments"}
           </span>
           <button
             type="button"
             onClick={onCancelReply}
             className="ml-auto text-muted hover:text-danger"
-            aria-label="Válasz megszakítása"
+            aria-label="Cancel reply"
           >
             ×
           </button>
@@ -103,7 +103,7 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
                 type="button"
                 onClick={() => setFiles(files.filter((_, i) => i !== index))}
                 className="text-muted hover:text-danger"
-                aria-label={`${file.name} eltávolítása`}
+                aria-label={`Remove ${file.name}`}
               >
                 ×
               </button>
@@ -132,7 +132,7 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
           type="button"
           onClick={() => fileInput.current?.click()}
           className="pb-1 text-lg leading-none text-muted hover:text-text"
-          aria-label="Fájl csatolása"
+          aria-label="Attach a file"
         >
           +
         </button>
@@ -150,7 +150,7 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
           type="button"
           onClick={() => setPickerOpen((open) => !open)}
           aria-expanded={pickerOpen}
-          aria-label="Emoji beszúrása"
+          aria-label="Insert emoji"
           className="pb-0.5 text-base leading-none text-muted hover:text-text"
         >
           ☺
@@ -161,7 +161,7 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
           value={content}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder={`Üzenet ide: #${channelName}`}
+          placeholder={`Message #${channelName}`}
           className="max-h-50 flex-1 resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted"
         />
       </div>

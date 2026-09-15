@@ -18,7 +18,7 @@ export function ChatPanel() {
   if (!channelId) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted">
-        Válassz csatornát a bal oldali listából.
+        Pick a channel from the list to start reading.
       </div>
     );
   }
@@ -67,16 +67,16 @@ function ChannelView({ channelId }: { channelId: string }) {
         </span>
         <h2 className="truncate text-sm font-semibold">{channelName}</h2>
         <div className="ml-auto flex items-center gap-1">
-          <HeaderButton panel="pins" label="Kitűzött üzenetek" glyph="⚑" />
-          <HeaderButton panel="search" label="Keresés" glyph="⌕" />
+          <HeaderButton panel="pins" label="Pinned messages" glyph="⚑" />
+          <HeaderButton panel="search" label="Search" glyph="⌕" />
         </div>
       </header>
 
       <div ref={scroller} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4">
         {messages === undefined ? (
-          <p className="text-sm text-muted">Üzenetek betöltése…</p>
+          <p className="text-sm text-muted">Loading messages…</p>
         ) : messages.length === 0 ? (
-          <p className="text-sm text-muted">Még nincs üzenet ebben a csatornában.</p>
+          <p className="text-sm text-muted">No messages in this channel yet.</p>
         ) : (
           <ol>
             {messages.map((message, index) => (
@@ -206,9 +206,9 @@ function MessageRow({
               <time
                 dateTime={message.timestamp}
                 className="font-mono text-[11px] text-muted"
-                title={new Date(message.timestamp).toLocaleString("hu-HU")}
+                title={new Date(message.timestamp).toLocaleString("en-US")}
               >
-                {new Date(message.timestamp).toLocaleTimeString("hu-HU", {
+                {new Date(message.timestamp).toLocaleTimeString("en-US", {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}

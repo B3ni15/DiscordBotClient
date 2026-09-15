@@ -17,13 +17,13 @@ export function GuildRail() {
 
   return (
     <nav
-      aria-label="Szerverek"
+      aria-label="Servers"
       className="flex w-[72px] shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-line bg-ink py-3"
     >
       <button
         type="button"
         onClick={() => setDmMode(true)}
-        title="Közvetlen üzenetek"
+        title="Direct messages"
         aria-current={dmMode ? "true" : undefined}
         className={`grid h-12 w-12 place-items-center rounded-2xl text-lg transition-colors ${
           dmMode ? "bg-accent/20 text-accent" : "bg-panel text-muted hover:bg-raised"
@@ -67,7 +67,7 @@ export function GuildRail() {
       <button
         type="button"
         onClick={() => togglePanel("settings")}
-        title="Beállítások"
+        title="Settings"
         aria-pressed={settingsOpen}
         className={`mt-auto grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-sm transition-colors ${
           settingsOpen ? "bg-accent/20 text-accent" : "bg-panel text-muted hover:bg-raised"
