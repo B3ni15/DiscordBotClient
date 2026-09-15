@@ -8,13 +8,14 @@ import { useUnread } from "@/lib/notifications/unread";
 import { isTextChannel, useClient } from "@/lib/store/client";
 
 const CATEGORY = 4;
+const EMPTY_CHANNEL_IDS: string[] = [];
 
 /** Channel list for the selected guild, grouped by category. */
 export function ChannelSidebar() {
   const selectedGuildId = useClient((state) => state.selectedGuildId);
   const guild = useClient((state) => (selectedGuildId ? state.guilds[selectedGuildId] : null));
   const channelIds = useClient((state) =>
-    selectedGuildId ? (state.channelsByGuild[selectedGuildId] ?? []) : [],
+    selectedGuildId ? (state.channelsByGuild[selectedGuildId] ?? EMPTY_CHANNEL_IDS) : EMPTY_CHANNEL_IDS,
   );
   const channelsById = useClient((state) => state.channelsById);
   const selectedChannelId = useClient((state) => state.selectedChannelId);

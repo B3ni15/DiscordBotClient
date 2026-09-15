@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useClient } from "@/lib/store/client";
+import { useClient, type TypingUser } from "@/lib/store/client";
 
 const TYPING_TTL = 9000;
+const EMPTY_TYPING_USERS: TypingUser[] = [];
 
 /** Discord stops the indicator 9s after the last TYPING_START. */
 export function TypingIndicator({ channelId }: { channelId: string }) {
-  const typing = useClient((state) => state.typingByChannel[channelId] ?? []);
+  const typing = useClient((state) => state.typingByChannel[channelId] ?? EMPTY_TYPING_USERS);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
