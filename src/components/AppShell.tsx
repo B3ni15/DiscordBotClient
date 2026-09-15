@@ -13,6 +13,7 @@ import { StatusBar } from "./StatusBar";
 
 export function AppShell() {
   const status = useClient((state) => state.status);
+  const error = useClient((state) => state.error);
   const dmMode = useUI((state) => state.dmMode);
   const panelOpen = useUI((state) => state.panel !== null);
   const selectChannel = useClient((state) => state.selectChannel);
@@ -35,7 +36,7 @@ export function AppShell() {
         {/* The member list gives way to an open panel rather than squeezing the chat. */}
         {!dmMode && !panelOpen && <MemberSidebar />}
       </div>
-      {status !== "ready" && <StatusBar />}
+      {(status !== "ready" || error) && <StatusBar />}
     </div>
   );
 }

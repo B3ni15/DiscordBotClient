@@ -142,28 +142,37 @@ export const useClient = create<ClientState>((set, get) => ({
   selectChannel: async (channelId) => {
     set({ selectedChannelId: channelId });
     if (get().messagesByChannel[channelId]) return;
-    const messages = await api.messages(get().getRest(), channelId, { limit: 50 });
-    set((state) => ({
-      // Discord returns newest first; the UI renders oldest to newest.
-      messagesByChannel: { ...state.messagesByChannel, [channelId]: messages.reverse() },
-      hasMoreByChannel: { ...state.hasMoreByChannel, [channelId]: messages.length === 50 },
-    }));
+    try {
+      const messages = await api.messages(get().getRest(), channelId, { limit: 50 });
+      set((state) => ({
+        // Discord returns newest first; the UI renders oldest to newest.
+        messagesByChannel: { ...state.messagesByChannel, [channelId]: messages.reverse() },
+        hasMoreByChannel: { ...state.hasMoreByChannel, [channelId]: messages.length === 50 },
+        error: null,
+      }));
+    } catch (cause) {
+      set({ error: formatClientError(cause, "Could not load messages.") });
+    }
   },
 
   loadOlderMessages: async (channelId) => {
     const existing = get().messagesByChannel[channelId];
     if (!existing?.length || get().hasMoreByChannel[channelId] === false) return;
-    const older = await api.messages(get().getRest(), channelId, {
-      limit: 50,
-      before: existing[0].id,
-    });
-    set((state) => ({
-      messagesByChannel: {
-        ...state.messagesByChannel,
-        [channelId]: [...older.reverse(), ...(state.messagesByChannel[channelId] ?? [])],
-      },
-      hasMoreByChannel: { ...state.hasMoreByChannel, [channelId]: older.length === 50 },
-    }));
+    try {
+      const older = await api.messages(get().getRest(), channelId, {
+        limit: 50,
+        before: existing[0].id,
+      });
+      set((state) => ({
+        messagesByChannel: {
+          ...state.messagesByChannel,
+          [channelId]: [...older.reverse(), ...(state.messagesByChannel[channelId] ?? [])],
+        },
+        hasMoreByChannel: { ...state.hasMoreByChannel, [channelId]: older.length === 50 },
+      }));
+    } catch (cause) {
+      set({ error: formatClientError(cause, "Could not load older messages.") });
+    }
   },
 
   sendMessage: async (channelId, content, files) => {
@@ -441,6 +450,13 @@ function mapMessage(
 
 function reactionKey(emoji: { id?: string | null; name?: string | null }) {
   return emoji.id ?? emoji.name ?? "";
+}
+
+function formatClientError(cause: unknown, fallback: string) {
+  if (cause instanceof TypeError && cause.message.includes("fetch")) {
+    return "Network error while contacting Discord. Check your connection or browser access to discord.com.";
+  }
+  return cause instanceof Error ? cause.message : fallback;
 }
 
 /** 0 = text, 5 = announcement, 10/11/12 = threads. */
