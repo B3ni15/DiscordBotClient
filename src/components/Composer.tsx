@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { APIMessage } from "discord-api-types/v10";
 import { EmojiPicker } from "@/components/actions/EmojiPicker";
+import { Spinner } from "@/components/ui/Spinner";
 import { api } from "@/lib/discord/api";
 import { replyToMessage } from "@/lib/discord/messageActions";
 import { useClient } from "@/lib/store/client";
@@ -12,12 +13,20 @@ const TYPING_THROTTLE = 8000;
 interface ComposerProps {
   channelId: string;
   channelName: string;
+  /** A DM is addressed by name, a channel by #name. */
+  isDM?: boolean;
   /** When set, the next message is sent as a reply to it. */
   replyTo?: APIMessage | null;
   onCancelReply?: () => void;
 }
 
-export function Composer({ channelId, channelName, replyTo, onCancelReply }: ComposerProps) {
+export function Composer({
+  channelId,
+  channelName,
+  isDM = false,
+  replyTo,
+  onCancelReply,
+}: ComposerProps) {
   const sendMessage = useClient((state) => state.sendMessage);
   const getRest = useClient((state) => state.getRest);
   const [content, setContent] = useState("");
@@ -28,6 +37,36 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
   const lastTypingAt = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
+
+  // Hitting reply should put the caret in the box, not make you click it.
+  useEffect(() => {
+    if (replyTo) textarea.current?.focus();
+  }, [replyTo]);
+
+  /**
+   * Typing anywhere that is not already a field jumps into the composer, the way
+   * Discord lets you answer without aiming at the box first. Focusing during
+   * keydown means the character itself still lands in the textarea.
+   */
+  useEffect(() => {
+    function handleGlobalKey(event: KeyboardEvent) {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      // Printable characters only; navigation and shortcuts stay where they are.
+      if (event.key.length !== 1) return;
+      const active = document.activeElement as HTMLElement | null;
+      if (
+        active?.isContentEditable ||
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      textarea.current?.focus();
+    }
+    document.addEventListener("keydown", handleGlobalKey);
+    return () => document.removeEventListener("keydown", handleGlobalKey);
+  }, []);
 
   async function send() {
     if (sending || (!content.trim() && files.length === 0)) return;
@@ -70,12 +109,12 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
   }
 
   return (
-    <div className="shrink-0 px-4 pb-4">
+    <div className="shrink-0 px-4 pb-6">
       {replyTo && (
-        <div className="flex items-center gap-2 rounded-t-lg border border-b-0 border-line bg-raised px-3 py-1.5 text-xs text-muted">
+        <div className="flex animate-fade-in items-center gap-2 rounded-t-lg bg-panel-alt px-4 py-2 text-xs text-muted">
           <span className="truncate">
             Replying to{" "}
-            <span className="text-text">
+            <span className="font-semibold text-bright">
               {replyTo.author.global_name ?? replyTo.author.username}
             </span>
             {files.length > 0 && " — sent as a plain message because it has attachments"}
@@ -83,7 +122,7 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
           <button
             type="button"
             onClick={onCancelReply}
-            className="ml-auto text-muted hover:text-danger"
+            className="ml-auto rounded px-1 text-sm text-muted transition-colors hover:text-bright"
             aria-label="Cancel reply"
           >
             ×
@@ -96,7 +135,7 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
           {files.map((file, index) => (
             <li
               key={`${file.name}-${index}`}
-              className="flex items-center gap-2 rounded border border-line bg-panel px-2 py-1 text-xs"
+              className="flex animate-pop-in items-center gap-2 rounded-lg bg-panel-alt px-2.5 py-1.5 text-xs"
             >
               <span className="max-w-40 truncate font-mono">{file.name}</span>
               <button
@@ -113,7 +152,7 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
       )}
 
       <div
-        className={`relative flex items-end gap-2 border border-line bg-panel px-3 py-2 focus-within:border-accent ${
+        className={`relative flex items-end gap-3 bg-raised px-4 py-2.5 transition-shadow focus-within:shadow-[0_0_0_1px_var(--accent)] ${
           replyTo ? "rounded-b-lg" : "rounded-lg"
         }`}
       >
@@ -131,10 +170,12 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
         <button
           type="button"
           onClick={() => fileInput.current?.click()}
-          className="pb-1 text-lg leading-none text-muted hover:text-text"
+          className="grid h-6 w-6 shrink-0 place-items-center self-end rounded-full bg-muted text-lg leading-none text-raised transition-colors hover:bg-bright"
           aria-label="Attach a file"
         >
-          +
+          <span aria-hidden className="-mt-px">
+            +
+          </span>
         </button>
         <input
           ref={fileInput}
@@ -151,9 +192,9 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
           onClick={() => setPickerOpen((open) => !open)}
           aria-expanded={pickerOpen}
           aria-label="Insert emoji"
-          className="pb-0.5 text-base leading-none text-muted hover:text-text"
+          className="shrink-0 self-end pb-0.5 text-xl leading-none grayscale transition-all hover:scale-110 hover:grayscale-0"
         >
-          ☺
+          <span aria-hidden>🙂</span>
         </button>
         <textarea
           ref={textarea}
@@ -161,13 +202,15 @@ export function Composer({ channelId, channelName, replyTo, onCancelReply }: Com
           value={content}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder={`Message #${channelName}`}
-          className="max-h-50 flex-1 resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted"
+          placeholder={isDM ? `Message @${channelName}` : `Message #${channelName}`}
+          aria-label={isDM ? `Message ${channelName}` : `Message #${channelName}`}
+          className="max-h-50 flex-1 resize-none self-center bg-transparent py-0.5 text-[15px] leading-relaxed text-text outline-none placeholder:text-faint"
         />
+        {sending && <Spinner size={14} className="self-end pb-1 text-muted" label="Sending" />}
       </div>
 
       {error && (
-        <p role="alert" className="mt-2 text-xs text-danger">
+        <p role="alert" className="mt-2 animate-fade-in text-xs text-danger">
           {error}
         </p>
       )}

@@ -1,16 +1,23 @@
 "use client";
 
+import { useState } from "react";
 import type { APIChannel } from "discord-api-types/v10";
 import { MuteButton } from "@/components/notifications/MuteButton";
 import { UnreadBadge } from "@/components/notifications/UnreadBadge";
 import { ThreadList } from "@/components/nav/ThreadList";
+import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useUnread } from "@/lib/notifications/unread";
-import { isTextChannel, useClient } from "@/lib/store/client";
+import { isTextChannel, isVoiceChannel, useClient } from "@/lib/store/client";
+import { UserPanel } from "./UserPanel";
+import { VoiceChannelRow } from "./VoiceChannelRow";
 
 const CATEGORY = 4;
+const ANNOUNCEMENT = 5;
+/** Channel types from 10 up are threads. */
+const THREAD = 10;
 const EMPTY_CHANNEL_IDS: string[] = [];
 
-/** Channel list for the selected guild, grouped by category. */
+/** Channel list for the selected guild, grouped by collapsible categories. */
 export function ChannelSidebar() {
   const selectedGuildId = useClient((state) => state.selectedGuildId);
   const guild = useClient((state) => (selectedGuildId ? state.guilds[selectedGuildId] : null));
@@ -19,37 +26,83 @@ export function ChannelSidebar() {
   );
   const channelsById = useClient((state) => state.channelsById);
   const selectedChannelId = useClient((state) => state.selectedChannelId);
+  const status = useClient((state) => state.status);
+
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const channels = channelIds.map((id) => channelsById[id]).filter(Boolean);
   const groups = groupByCategory(channels);
+  const loading = channels.length === 0 && status !== "ready";
 
   return (
-    <div className="flex w-60 shrink-0 flex-col border-r border-line bg-panel">
-      <header className="flex h-12 shrink-0 items-center border-b border-line px-4">
-        <h2 className="truncate text-sm font-semibold">{guild?.name ?? "Pick a server"}</h2>
+    <div className="flex w-60 shrink-0 flex-col bg-panel">
+      <header className="flex h-12 shrink-0 items-center px-4 shadow-[0_1px_0_rgba(0,0,0,0.2),0_2px_0_rgba(0,0,0,0.05)]">
+        <h2 className="truncate text-[15px] font-semibold text-bright">
+          {guild?.name ?? "Pick a server"}
+        </h2>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-2 py-3">
+      <div className="min-h-0 flex-1 animate-sidebar-in overflow-y-auto px-2 py-3">
         {selectedChannelId && (
           <ThreadList
             channelId={selectedChannelId}
             guildId={selectedGuildId ?? undefined}
+            variant="inline"
             className="mb-4"
           />
         )}
-        {groups.map((group) => (
-          <section key={group.id ?? "root"} className="mb-4">
-            {group.name && (
-              <h3 className="px-2 pb-1 text-xs font-semibold text-muted">{group.name}</h3>
-            )}
-            <ul>
-              {group.channels.filter(isTextChannel).map((channel) => (
-                <ChannelRow key={channel.id} channel={channel} />
-              ))}
-            </ul>
-          </section>
-        ))}
+
+        {loading ? (
+          <SkeletonRows rows={8} className="pt-2" />
+        ) : (
+          groups.map((group) => {
+            const key = group.id ?? "__root__";
+            const isCollapsed = collapsed[key] === true;
+            // Discord lists a category's text channels first, then its voice ones.
+            const textChannels = group.channels.filter(isTextChannel);
+            const voiceChannels = group.channels.filter(isVoiceChannel);
+            if (textChannels.length === 0 && voiceChannels.length === 0) return null;
+
+            return (
+              <section key={key} className="mb-4">
+                {group.name && (
+                  <button
+                    type="button"
+                    onClick={() => setCollapsed((state) => ({ ...state, [key]: !isCollapsed }))}
+                    aria-expanded={!isCollapsed}
+                    className="flex w-full items-center gap-0.5 px-0.5 pb-1 text-[11px] font-bold tracking-wide text-muted uppercase transition-colors hover:text-bright"
+                  >
+                    <span
+                      aria-hidden
+                      className="inline-block text-[9px] transition-transform duration-200"
+                      style={{ transform: isCollapsed ? "rotate(-90deg)" : "none" }}
+                    >
+                      ▼
+                    </span>
+                    <span className="truncate">{group.name}</span>
+                  </button>
+                )}
+                {!isCollapsed && (
+                  <ul className="animate-fade-in">
+                    {textChannels.map((channel) => (
+                      <ChannelRow key={channel.id} channel={channel} />
+                    ))}
+                    {voiceChannels.map((channel) => (
+                      <VoiceChannelRow
+                        key={channel.id}
+                        channel={channel}
+                        guildId={selectedGuildId}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </section>
+            );
+          })
+        )}
       </div>
+
+      <UserPanel />
     </div>
   );
 }
@@ -62,18 +115,29 @@ function ChannelRow({ channel }: { channel: APIChannel }) {
 
   const active = channel.id === selectedChannelId;
   const name = "name" in channel ? channel.name : null;
+  // Announcement channels and threads get their own glyph, as in Discord.
+  const glyph = channel.type === ANNOUNCEMENT ? "📢" : channel.type >= THREAD ? "🧵" : "#";
 
   return (
-    <li className="group/channel flex items-center gap-1">
+    <li className="group/channel relative flex items-center gap-1">
+      {active && (
+        <span
+          aria-hidden
+          className="absolute top-1/2 -left-1.5 h-5 w-1 -translate-y-1/2 rounded-r-full bg-bright"
+        />
+      )}
       <button
         type="button"
         onClick={() => void selectChannel(channel.id)}
-        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm transition-colors ${
-          active ? "bg-raised text-text" : "text-muted hover:bg-raised/60 hover:text-text"
+        aria-current={active ? "true" : undefined}
+        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-[15px] transition-colors duration-100 ${
+          active
+            ? "bg-raised font-medium text-bright"
+            : "text-muted hover:bg-hover hover:text-text"
         }`}
       >
-        <span aria-hidden className="text-muted">
-          #
+        <span aria-hidden className="shrink-0 text-lg leading-none text-faint">
+          {glyph}
         </span>
         <span className="truncate">{name ?? channel.id}</span>
         <UnreadBadge count={unread} className="ml-auto" />

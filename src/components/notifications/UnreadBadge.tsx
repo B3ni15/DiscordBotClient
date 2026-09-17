@@ -11,7 +11,7 @@ export function UnreadBadge({ count, className }: UnreadBadgeProps) {
   return (
     <span
       aria-label={`${label} unread`}
-      className={`inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-center font-mono text-[10px] leading-none font-semibold text-ink ${className ?? ""}`}
+      className={`inline-flex min-w-[18px] animate-pop-in items-center justify-center rounded-full bg-danger px-1.5 py-0.5 text-center text-[11px] leading-none font-bold text-white ${className ?? ""}`}
     >
       {label}
     </span>

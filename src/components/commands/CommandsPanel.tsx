@@ -30,7 +30,7 @@ export function CommandsPanel({ className, onClose }: CommandsPanelProps) {
   return (
     <aside
       aria-label="Slash commands"
-      className={`flex min-h-0 w-80 shrink-0 flex-col border-l border-line bg-panel ${className ?? ""}`}
+      className={`flex h-full min-h-0 w-full flex-col bg-panel ${className ?? ""}`}
     >
       <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line px-4">
         <h2 className="text-xs font-semibold text-muted">Slash commands</h2>

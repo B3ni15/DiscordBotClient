@@ -95,7 +95,7 @@ export function ReactionBar({ message, onAddReaction, className = "" }: Reaction
           onClick={onAddReaction}
           aria-label="Add reaction"
           title="Add reaction"
-          className="flex h-6 items-center rounded-full border border-line bg-panel px-2 text-xs text-muted hover:border-accent hover:text-text"
+          className="flex h-[26px] items-center rounded-lg border border-transparent bg-panel px-2 text-xs text-muted transition-colors hover:border-line hover:text-bright"
         >
           +
         </button>
@@ -160,7 +160,7 @@ function ReactionPill({
       title={tooltip}
       aria-label={`${label}, ${count} reactions${mine ? ", including you" : ""}`}
       aria-pressed={mine}
-      className={`flex h-6 items-center gap-1 rounded-full border px-2 text-xs transition-colors ${
+      className={`flex h-[26px] items-center gap-1 rounded-lg border px-2 text-xs transition-colors ${
         mine
           ? "border-accent bg-accent/15 text-accent"
           : "border-line bg-panel text-muted hover:border-accent hover:text-text"

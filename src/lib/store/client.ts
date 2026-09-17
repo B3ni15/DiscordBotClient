@@ -14,11 +14,74 @@ import type {
   GatewayTypingStartDispatchData,
 } from "discord-api-types/v10";
 import { api } from "@/lib/discord/api";
+import { GatewayIntent, hasIntent } from "@/lib/discord/constants";
 import { GatewayClient, type GatewayStatus } from "@/lib/discord/gateway";
+import {
+  DEFAULT_SELF_PRESENCE,
+  loadSelfPresence,
+  saveSelfPresence,
+  toGatewayPresence,
+  type SelfPresence,
+} from "@/lib/discord/selfPresence";
 import { RestClient } from "@/lib/discord/rest";
-import { rememberDM } from "@/components/nav/dmStore";
+import { rememberDM, type DMUserInfo } from "@/components/nav/dmStore";
+import { useUI } from "@/lib/store/ui";
 
 const TOKEN_KEY = "disbotclient:token";
+
+/** One activity line of a presence, e.g. "Playing Minecraft". */
+/** The artwork an activity publishes, as raw asset keys. */
+export interface ActivityAssets {
+  largeImage?: string | null;
+  largeText?: string | null;
+  smallImage?: string | null;
+  smallText?: string | null;
+}
+
+export interface PresenceActivity {
+  name: string;
+  /** Discord activity type: 0 playing, 1 streaming, 2 listening, 3 watching, 4 custom, 5 competing. */
+  type: number;
+  state?: string | null;
+  details?: string | null;
+  /** Needed to resolve `assets` keys that are application asset ids. */
+  applicationId?: string | null;
+  url?: string | null;
+  assets?: ActivityAssets;
+  /** Epoch ms; drives the "elapsed" or "left" counter Discord shows. */
+  startedAt?: number | null;
+  endsAt?: number | null;
+  /** Stable key for React lists: an activity has no id of its own. */
+  id?: string | null;
+}
+
+/** Everything the gateway tells us about where a user is and what they are doing. */
+export interface Presence {
+  status: string;
+  activities: PresenceActivity[];
+  /** Per-device status; the keys present say which clients are connected. */
+  clientStatus: { desktop?: string; mobile?: string; web?: string };
+}
+
+export const OFFLINE_PRESENCE: Presence = { status: "offline", activities: [], clientStatus: {} };
+
+/** Someone sitting in a voice channel, and what their mic and camera are doing. */
+export interface VoiceState {
+  userId: string;
+  channelId: string;
+  /** Silenced by a moderator, as opposed to having muted themselves. */
+  serverMute: boolean;
+  serverDeaf: boolean;
+  selfMute: boolean;
+  selfDeaf: boolean;
+  selfVideo: boolean;
+  /** Go Live screenshare. */
+  selfStream: boolean;
+  /** Stage channels: on stage rather than in the audience. */
+  suppress: boolean;
+  /** The member as the voice state carried it; voice works without the members intent. */
+  member?: APIGuildMember;
+}
 
 export interface TypingUser {
   userId: string;
@@ -41,7 +104,17 @@ interface ClientState {
   /** False once the channel's history is fully loaded. */
   hasMoreByChannel: Record<string, boolean>;
   membersByGuild: Record<string, Record<string, APIGuildMember>>;
-  presenceByGuild: Record<string, Record<string, string>>;
+  presenceByGuild: Record<string, Record<string, Presence>>;
+  /**
+   * Whether the live connection carries the privileged presence intent. Without
+   * it Discord sends no presence data at all, and the member list must not
+   * pretend that everyone is offline.
+   */
+  presenceEnabled: boolean;
+  /** Who is sitting in which voice channel, per guild, keyed by user id. */
+  voiceStatesByGuild: Record<string, Record<string, VoiceState>>;
+  /** The presence this bot publishes for itself. */
+  selfPresence: SelfPresence;
   typingByChannel: Record<string, TypingUser[]>;
 
   selectedGuildId: string | null;
@@ -54,6 +127,12 @@ interface ClientState {
   selectChannel: (channelId: string) => Promise<void>;
   loadOlderMessages: (channelId: string) => Promise<void>;
   sendMessage: (channelId: string, content: string, files?: File[]) => Promise<void>;
+  /** Publishes a new presence for this bot and remembers it for next time. */
+  setSelfPresence: (presence: SelfPresence) => void;
+  /** Opens (or re-opens) the DM with a user, files it under Direct Messages and selects it. */
+  openDM: (userId: string, about?: DMUserInfo) => Promise<string>;
+  /** Fetches a channel the gateway never announced (a DM, an archived thread). */
+  hydrateChannel: (channelId: string) => Promise<void>;
   getRest: () => RestClient;
   getGateway: () => GatewayClient | null;
 }
@@ -74,6 +153,9 @@ export const useClient = create<ClientState>((set, get) => ({
   hasMoreByChannel: {},
   membersByGuild: {},
   presenceByGuild: {},
+  presenceEnabled: false,
+  voiceStatesByGuild: {},
+  selfPresence: DEFAULT_SELF_PRESENCE,
   typingByChannel: {},
   selectedGuildId: null,
   selectedChannelId: null,
@@ -106,11 +188,22 @@ export const useClient = create<ClientState>((set, get) => ({
     localStorage.setItem(TOKEN_KEY, normalizedToken);
     set({ token: normalizedToken, user });
 
+    const presence = loadSelfPresence();
+    set({ selfPresence: presence });
+
     gateway?.disconnect();
     gateway = new GatewayClient(normalizedToken);
+    gateway.setMobile(presence.mobile);
+    gateway.setPresence(toGatewayPresence(presence));
     gateway.on("status", (status) => set({ status }));
+    gateway.on("intents", (intents) =>
+      set({ presenceEnabled: hasIntent(intents, GatewayIntent.GuildPresences) }),
+    );
     gateway.on("error", (error) => set({ error: error.message }));
-    gateway.on("dispatch", (event, data) => handleDispatch(set, get, event, data));
+    gateway.on("dispatch", (event, data) => {
+      if (event === "READY") gateway?.setPresence(toGatewayPresence(get().selfPresence));
+      handleDispatch(set, get, event, data);
+    });
     gateway.connect();
   },
 
@@ -132,6 +225,8 @@ export const useClient = create<ClientState>((set, get) => ({
       hasMoreByChannel: {},
       membersByGuild: {},
       presenceByGuild: {},
+      presenceEnabled: false,
+      voiceStatesByGuild: {},
       typingByChannel: {},
       selectedGuildId: null,
       selectedChannelId: null,
@@ -147,6 +242,9 @@ export const useClient = create<ClientState>((set, get) => ({
 
   selectChannel: async (channelId) => {
     set({ selectedChannelId: channelId });
+    // DMs and threads are not part of any GUILD_CREATE payload, so the header
+    // would otherwise only have an id to show.
+    if (!get().channelsById[channelId]) void get().hydrateChannel(channelId);
     if (get().messagesByChannel[channelId]) return;
     try {
       const messages = await api.messages(get().getRest(), channelId, { limit: 50 });
@@ -179,6 +277,34 @@ export const useClient = create<ClientState>((set, get) => ({
     } catch (cause) {
       set({ error: formatClientError(cause, "Could not load older messages.") });
     }
+  },
+
+  setSelfPresence: (presence) => {
+    saveSelfPresence(presence);
+    set({ selfPresence: presence });
+    // Toggling mobile re-identifies, which replays the presence from IDENTIFY.
+    gateway?.setMobile(presence.mobile);
+    gateway?.setPresence(toGatewayPresence(presence));
+  },
+
+  hydrateChannel: async (channelId) => {
+    try {
+      const channel = await api.channel(get().getRest(), channelId);
+      set((state) => ({ channelsById: { ...state.channelsById, [channel.id]: channel } }));
+      if (channel.type === 1 || channel.type === 3) rememberDM(channel as APIDMChannel);
+    } catch {
+      // Not fatal: the header falls back to the channel id.
+    }
+  },
+
+  openDM: async (userId, about) => {
+    const channel = (await api.createDM(get().getRest(), userId)) as APIDMChannel;
+    rememberDM(channel, about);
+    set((state) => ({ channelsById: { ...state.channelsById, [channel.id]: channel } }));
+    // A DM lives under the Direct Messages list, not under the server it was opened from.
+    useUI.getState().setDmMode(true);
+    await get().selectChannel(channel.id);
+    return channel.id;
   },
 
   sendMessage: async (channelId, content, files) => {
@@ -233,11 +359,19 @@ function handleDispatch(
               .map((member) => [member.user!.id, member as APIGuildMember]),
           ),
         },
-        presenceByGuild: {
-          ...state.presenceByGuild,
-          [guild.id]: presenceMap(presences),
+        // Without the presence intent Discord omits the array entirely; keeping
+        // whatever is already known beats replacing it with an empty map.
+        presenceByGuild: presences
+          ? { ...state.presenceByGuild, [guild.id]: presenceMap(presences) }
+          : state.presenceByGuild,
+        voiceStatesByGuild: {
+          ...state.voiceStatesByGuild,
+          [guild.id]: voiceStateMap(guild.voice_states),
         },
       }));
+      // Discord always opens on a server; landing on an empty pane would make
+      // the client look like it failed to connect.
+      if (get().selectedGuildId === null) get().selectGuild(guild.id);
       break;
     }
     case "GUILD_UPDATE": {
@@ -246,23 +380,33 @@ function handleDispatch(
       break;
     }
     case "PRESENCE_UPDATE": {
-      const data = raw as {
-        guild_id?: string;
-        user?: { id?: string };
-        status?: string;
-      };
+      const data = raw as RawPresence & { guild_id?: string };
       if (!data.guild_id || !data.user?.id) break;
       const guildId = data.guild_id;
       const userId = data.user.id;
       set((state) => ({
+        presenceEnabled: true,
         presenceByGuild: {
           ...state.presenceByGuild,
           [guildId]: {
             ...(state.presenceByGuild[guildId] ?? {}),
-            [userId]: data.status ?? "offline",
+            [userId]: toPresence(data),
           },
         },
       }));
+      break;
+    }
+    case "VOICE_STATE_UPDATE": {
+      const data = raw as RawVoiceState & { guild_id?: string };
+      if (!data.guild_id || !data.user_id) break;
+      const guildId = data.guild_id;
+      set((state) => {
+        const current = { ...(state.voiceStatesByGuild[guildId] ?? {}) };
+        // A null channel_id means the user left voice altogether.
+        if (data.channel_id) current[data.user_id!] = toVoiceState(data);
+        else delete current[data.user_id!];
+        return { voiceStatesByGuild: { ...state.voiceStatesByGuild, [guildId]: current } };
+      });
       break;
     }
     case "GUILD_DELETE": {
@@ -275,6 +419,9 @@ function handleDispatch(
           guildOrder: state.guildOrder.filter((guildId) => guildId !== id),
           presenceByGuild: Object.fromEntries(
             Object.entries(state.presenceByGuild).filter(([guildId]) => guildId !== id),
+          ),
+          voiceStatesByGuild: Object.fromEntries(
+            Object.entries(state.voiceStatesByGuild).filter(([guildId]) => guildId !== id),
           ),
           selectedGuildId: state.selectedGuildId === id ? null : state.selectedGuildId,
         };
@@ -501,11 +648,98 @@ function reactionKey(emoji: { id?: string | null; name?: string | null }) {
   return emoji.id ?? emoji.name ?? "";
 }
 
-function presenceMap(presences: unknown[] | undefined): Record<string, string> {
-  const result: Record<string, string> = {};
+interface RawVoiceState {
+  user_id?: string;
+  channel_id?: string | null;
+  mute?: boolean;
+  deaf?: boolean;
+  self_mute?: boolean;
+  self_deaf?: boolean;
+  self_video?: boolean;
+  self_stream?: boolean;
+  suppress?: boolean;
+  member?: APIGuildMember;
+}
+
+function toVoiceState(raw: RawVoiceState): VoiceState {
+  return {
+    userId: raw.user_id!,
+    channelId: raw.channel_id!,
+    serverMute: raw.mute ?? false,
+    serverDeaf: raw.deaf ?? false,
+    selfMute: raw.self_mute ?? false,
+    selfDeaf: raw.self_deaf ?? false,
+    selfVideo: raw.self_video ?? false,
+    selfStream: raw.self_stream ?? false,
+    suppress: raw.suppress ?? false,
+    member: raw.member,
+  };
+}
+
+function voiceStateMap(states: unknown[] | undefined): Record<string, VoiceState> {
+  const result: Record<string, VoiceState> = {};
+  for (const raw of states ?? []) {
+    const state = raw as RawVoiceState;
+    if (state.user_id && state.channel_id) result[state.user_id] = toVoiceState(state);
+  }
+  return result;
+}
+
+interface RawPresence {
+  user?: { id?: string };
+  status?: string;
+  activities?: Array<{
+    id?: string;
+    name?: string;
+    type?: number;
+    state?: string | null;
+    details?: string | null;
+    application_id?: string | null;
+    url?: string | null;
+    assets?: {
+      large_image?: string | null;
+      large_text?: string | null;
+      small_image?: string | null;
+      small_text?: string | null;
+    };
+    timestamps?: { start?: number | null; end?: number | null };
+  }>;
+  client_status?: { desktop?: string; mobile?: string; web?: string };
+}
+
+function toPresence(raw: RawPresence): Presence {
+  return {
+    status: raw.status ?? "offline",
+    activities: (raw.activities ?? [])
+      .filter((activity) => typeof activity?.name === "string")
+      .map((activity) => ({
+        name: activity.name as string,
+        type: activity.type ?? 0,
+        state: activity.state ?? null,
+        details: activity.details ?? null,
+        applicationId: activity.application_id ?? null,
+        url: activity.url ?? null,
+        assets: activity.assets
+          ? {
+              largeImage: activity.assets.large_image ?? null,
+              largeText: activity.assets.large_text ?? null,
+              smallImage: activity.assets.small_image ?? null,
+              smallText: activity.assets.small_text ?? null,
+            }
+          : undefined,
+        startedAt: activity.timestamps?.start ?? null,
+        endsAt: activity.timestamps?.end ?? null,
+        id: activity.id ?? null,
+      })),
+    clientStatus: raw.client_status ?? {},
+  };
+}
+
+function presenceMap(presences: unknown[] | undefined): Record<string, Presence> {
+  const result: Record<string, Presence> = {};
   for (const raw of presences ?? []) {
-    const presence = raw as { user?: { id?: string }; status?: string };
-    if (presence.user?.id) result[presence.user.id] = presence.status ?? "offline";
+    const presence = raw as RawPresence;
+    if (presence.user?.id) result[presence.user.id] = toPresence(presence);
   }
   return result;
 }
@@ -532,8 +766,24 @@ function formatLoginError(cause: unknown) {
 /** 0 = text, 5 = announcement, 10/11/12 = threads. */
 const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
 
+/** 2 = voice, 13 = stage. */
+const VOICE_CHANNEL_TYPES = new Set([2, 13]);
+
 export function isTextChannel(channel: APIChannel | undefined): channel is APIChannel {
   return channel !== undefined && TEXT_CHANNEL_TYPES.has(channel.type);
+}
+
+export function isVoiceChannel(channel: APIChannel | undefined): channel is APIChannel {
+  return channel !== undefined && VOICE_CHANNEL_TYPES.has(channel.type);
+}
+
+/**
+ * Channels whose messages this client can show. Voice channels carry Discord's
+ * built-in voice text chat, which a bot reads and posts to like any other
+ * channel — the voice stream itself is what it cannot join.
+ */
+export function hasMessages(channel: APIChannel | undefined): channel is APIChannel {
+  return isTextChannel(channel) || isVoiceChannel(channel);
 }
 
 /** Category-aware ordering that matches how Discord renders a channel list. */

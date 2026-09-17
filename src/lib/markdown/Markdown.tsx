@@ -93,14 +93,14 @@ function renderBlock(block: BlockNode, key: number, trailing?: ReactNode): React
       );
     case "quote":
       return (
-        <blockquote key={key} className="my-0.5 border-l-4 border-line pl-3">
+        <blockquote key={key} className="my-0.5 rounded-sm border-l-4 border-faint pl-3">
           {renderBlocks(block.children)}
           {trailing}
         </blockquote>
       );
     case "codeBlock":
       return (
-        <div key={key} className="my-1 overflow-hidden rounded border border-line bg-panel">
+        <div key={key} className="my-1 overflow-hidden rounded border border-ink bg-panel">
           {block.lang && (
             <div className="border-b border-line px-2 py-0.5 font-mono text-[10px] text-muted">
               {block.lang}
@@ -138,7 +138,7 @@ function renderInline(nodes: InlineNode[]): ReactNode {
         return <Fragment key={key}>{node.value}</Fragment>;
       case "code":
         return (
-          <code key={key} className="rounded bg-panel px-1 py-px font-mono text-[0.85em]">
+          <code key={key} className="rounded bg-ink px-1 py-px font-mono text-[0.85em] text-bright">
             {node.value}
           </code>
         );
@@ -165,7 +165,7 @@ function renderInline(nodes: InlineNode[]): ReactNode {
             href={href}
             target="_blank"
             rel="noreferrer noopener"
-            className="break-words text-accent hover:underline"
+            className="break-words text-link hover:underline"
           >
             {renderInline(node.children)}
           </a>
@@ -198,7 +198,7 @@ function Spoiler({ children }: { children: ReactNode }) {
       type="button"
       onClick={() => setRevealed(true)}
       aria-label="Reveal spoiler"
-      className="rounded bg-raised px-0.5 text-transparent select-none hover:bg-line"
+      className="rounded bg-ink px-0.5 text-transparent select-none transition-colors hover:bg-line"
     >
       {children}
     </button>

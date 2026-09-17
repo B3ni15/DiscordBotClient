@@ -14,7 +14,7 @@ export function SidePanel() {
   if (!panel) return null;
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-line bg-panel">
+    <aside className="flex h-full max-h-full w-80 min-h-0 shrink-0 animate-panel-in flex-col overflow-hidden bg-panel shadow-[-1px_0_0_rgba(0,0,0,0.2)]">
       {panel === "pins" && <PinnedPanel onClose={closePanel} />}
       {panel === "search" && <SearchPanel onClose={closePanel} />}
       {panel === "settings" && <Settings onClose={closePanel} />}
