@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import {
   AUDIO_OUT,
+  AUDIO_OUT_OPUS,
   FRAME_BYTES,
   decodeOutgoingAudio,
   encodeIncomingAudio,
@@ -80,8 +81,23 @@ try {
   outgoing[0] = AUDIO_OUT;
   Buffer.from(pcm.buffer).copy(outgoing, 1);
   const decoded = decodeOutgoingAudio(outgoing);
-  check("decodes an audio frame the page built", decoded?.equals(Buffer.from(pcm.buffer)) === true);
-  check("rejects a frame with a half sample in it", decodeOutgoingAudio(outgoing.subarray(0, 4)) === null);
+  check(
+    "decodes a PCM frame the page built",
+    decoded?.kind === "pcm" && decoded.payload.equals(Buffer.from(pcm.buffer)),
+  );
+  check(
+    "rejects a frame with a half sample in it",
+    decodeOutgoingAudio(outgoing.subarray(0, 4)) === null,
+  );
+
+  // A browser that encodes Opus itself sends packets of any length.
+  const packet = Buffer.from([0x78, 0x01, 0x02, 0x03, 0x04]);
+  const opusFrame = Buffer.concat([Buffer.of(AUDIO_OUT_OPUS), packet]);
+  const decodedOpus = decodeOutgoingAudio(opusFrame);
+  check(
+    "passes a browser-encoded Opus packet through",
+    decodedOpus?.kind === "opus" && decodedOpus.payload.equals(packet),
+  );
 
   const userId = "123456789012345678";
   const incoming = encodeIncomingAudio(userId, Buffer.from(pcm.buffer));

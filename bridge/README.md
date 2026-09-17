@@ -71,16 +71,31 @@ trustworthy. For a bridge on another machine, put it behind TLS and use `wss://`
 npm test
 ```
 
-Starts the bridge, walks the whole protocol against it — handshake, the gateway
+Walks the whole protocol against a running bridge — handshake, the gateway
 payload it asks the browser to send, an audio frame, the wire format in both
-directions — and reports what passed. No Discord account involved.
+directions — and then the outgoing path against the real `@discordjs/voice`:
+packets pushed in must come out of the audio resource whole, in order, and one
+20 ms block each. No Discord account involved.
+
+```bash
+npm run test:browser
+```
+
+The same path from the other end, in a real browser: the capture worklet cuts
+audio into 20 ms blocks, WebCodecs encodes them, the page sends them over the
+socket, and the bridge reports how many it received. Needs the app running
+(`npm run dev` in the repository root) and Playwright installed.
 
 ## Protocol
 
-JSON text frames for control, binary frames for audio. Audio is 48 kHz, 2
-channel, signed 16-bit little endian PCM, 20 ms per frame, tagged with one
-leading byte (`0x01` out to Discord, `0x02` in from it, followed by the
-speaker's id as a big-endian 64-bit number).
+JSON text frames for control, binary frames for audio, each with one leading
+tag byte.
+
+| Tag | Direction | Payload |
+| --- | --- | --- |
+| `0x03` | browser → Discord | A finished Opus packet. Browsers encode their own through WebCodecs, so this is the normal case: about 180 bytes per 20 ms, handed to Discord untouched. |
+| `0x01` | browser → Discord | 20 ms of 48 kHz stereo signed 16-bit PCM (3840 bytes), for a browser with no encoder. The bridge encodes it. |
+| `0x02` | Discord → browser | The speaker's id as a big-endian 64-bit number, then their audio as PCM. |
 
 | Browser → bridge | Meaning |
 | --- | --- |
@@ -88,6 +103,7 @@ speaker's id as a big-endian 64-bit number).
 | `update` | Move, mute or deafen without rebuilding the connection. |
 | `leave` | Leave the channel. |
 | `voice-state`, `voice-server` | The gateway events the handshake needs. |
+| `ping` | Answered with `pong`. |
 
 | Bridge → browser | Meaning |
 | --- | --- |
@@ -95,4 +111,6 @@ speaker's id as a big-endian 64-bit number).
 | `gateway` | A payload the browser must send on its gateway. |
 | `status` | `idle`, `connecting`, `ready` or `reconnecting`. |
 | `speaking` | Someone started or stopped talking. |
+| `stats` | Every two seconds: frames received, packets handed to Discord, packets arriving from the channel, drops, and what the audio player is doing. The client shows these next to its own counts, which is what makes "nobody can hear me" diagnosable rather than a guess. |
+| `expiring` | Only from the hosted worker: this instance is about to reach its time limit, so reconnect now. |
 | `error` | Something went wrong, in words. |

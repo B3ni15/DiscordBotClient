@@ -209,6 +209,60 @@ export function StreamControls() {
           ? `Hearing ${speaking.length} ${speaking.length === 1 ? "person" : "people"} right now.`
           : "Nobody is talking."}
       </p>
+
+      <FlowReadout />
+    </div>
+  );
+}
+
+/**
+ * Where the audio actually gets to, counted at both ends.
+ *
+ * "Nobody can hear me" has several very different causes — audio that never
+ * left this browser, audio that left and never arrived, audio that arrived and
+ * was never handed to Discord — and they are indistinguishable from the outside.
+ * These four numbers tell them apart at a glance.
+ */
+function FlowReadout() {
+  const flow = useBridge((state) => state.flow);
+  const encoding = useBridge((state) => state.encoding);
+  if (!flow) return null;
+
+  const problem =
+    flow.sent === 0
+      ? "Nothing is leaving this browser — is the microphone on, or a file playing?"
+      : flow.received === 0
+        ? "Audio is leaving this browser but not reaching the bridge."
+        : flow.delivered === 0
+          ? "The bridge is receiving audio but not handing it to Discord."
+          : null;
+
+  return (
+    <div className="mt-1.5 rounded bg-raised/60 px-2 py-1">
+      <dl className="grid grid-cols-4 gap-1 text-center font-mono text-[10px]">
+        <Count label="sent" value={flow.sent} />
+        <Count label="bridge" value={flow.received} />
+        <Count label="discord" value={flow.delivered} />
+        <Count label="heard" value={flow.incoming} muted />
+      </dl>
+      <p className="mt-0.5 text-center font-mono text-[9px] text-faint">
+        {encoding === "opus" ? "opus from this browser" : "pcm, encoded by the bridge"}
+        {flow.dropped > 0 ? ` · ${flow.dropped}/s dropped` : ""}
+        {flow.player !== "playing" ? ` · player ${flow.player}` : ""}
+      </p>
+      {problem && <p className="mt-1 text-[10px] leading-snug text-amber">{problem}</p>}
+    </div>
+  );
+}
+
+function Count({ label, value, muted }: { label: string; value: number; muted?: boolean }) {
+  return (
+    <div>
+      <dd className={value > 0 ? (muted ? "text-muted" : "text-online") : "text-danger"}>
+        {value}
+        <span className="text-faint">/s</span>
+      </dd>
+      <dt className="text-[9px] text-faint">{label}</dt>
     </div>
   );
 }

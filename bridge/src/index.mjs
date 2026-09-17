@@ -39,7 +39,7 @@ server.on("connection", (socket, request) => {
 
   socket.on("message", (data, isBinary) => session.handleMessage(data, isBinary));
   socket.on("close", () => {
-    session.close("browser disconnected");
+    session.dispose();
     log("disconnected");
   });
   socket.on("error", (cause) => log(`socket error: ${cause.message}`));

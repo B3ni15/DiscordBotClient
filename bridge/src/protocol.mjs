@@ -16,8 +16,9 @@ export const FRAME_SAMPLES = 960;
 export const FRAME_BYTES = FRAME_SAMPLES * CHANNELS * 2;
 
 /** Binary tags. */
-export const AUDIO_OUT = 0x01; // browser -> bridge -> Discord
-export const AUDIO_IN = 0x02; // Discord -> bridge -> browser
+export const AUDIO_OUT = 0x01; // browser -> bridge -> Discord, as PCM
+export const AUDIO_IN = 0x02; // Discord -> bridge -> browser, as PCM
+export const AUDIO_OUT_OPUS = 0x03; // browser -> bridge -> Discord, already Opus
 
 /** Wraps decoded PCM from one speaker, tagged with the user it came from. */
 export function encodeIncomingAudio(userId, pcm) {
@@ -28,10 +29,23 @@ export function encodeIncomingAudio(userId, pcm) {
   return frame;
 }
 
-/** The PCM out of a browser audio frame, or null when it is not one. */
+/**
+ * Unwraps a frame the browser sent.
+ *
+ * A browser that can encode Opus itself (every current one, through WebCodecs)
+ * sends finished packets, which go to Discord untouched — about 180 bytes per
+ * 20 ms rather than 3840, and no transcoding anywhere. The PCM tag is the
+ * fallback for browsers that cannot.
+ *
+ * @returns {{ kind: "opus" | "pcm", payload: Buffer } | null}
+ */
 export function decodeOutgoingAudio(data) {
-  if (!Buffer.isBuffer(data) || data.length < 3 || data[0] !== AUDIO_OUT) return null;
+  if (!Buffer.isBuffer(data) || data.length < 3) return null;
+
+  if (data[0] === AUDIO_OUT_OPUS) return { kind: "opus", payload: data.subarray(1) };
+  if (data[0] !== AUDIO_OUT) return null;
+
   // An odd tail would split a sample in half; Discord would hear the glitch.
   const body = data.subarray(1);
-  return body.length % 2 === 0 ? body : null;
+  return body.length % 2 === 0 ? { kind: "pcm", payload: body } : null;
 }

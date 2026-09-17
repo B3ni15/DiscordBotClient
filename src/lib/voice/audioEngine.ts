@@ -10,6 +10,11 @@
  *
  * Keeping the mixing in the browser means the bridge never needs ffmpeg or any
  * media handling of its own: whatever this browser can decode, the bot can play.
+ *
+ * Where WebCodecs is available — everywhere current — the page also encodes the
+ * Opus itself, so what leaves the browser is what Discord receives: about 180
+ * bytes per 20 ms instead of 3840, and not a single transcode in between. PCM
+ * remains the fallback for browsers without an encoder.
  */
 
 const SAMPLE_RATE = 48_000;
@@ -17,11 +22,34 @@ const CAPTURE_MODULE = "/voice/capture-worklet.js";
 const PLAYBACK_MODULE = "/voice/playback-worklet.js";
 
 export interface EngineHandlers {
-  /** One 20 ms block of interleaved 16-bit stereo, ready for the bridge. */
+  /** One 20 ms Opus packet, ready to be handed to Discord as it is. */
+  onPacket: (packet: Uint8Array) => void;
+  /** The same 20 ms as raw PCM, for browsers that cannot encode Opus. */
   onFrame: (pcm: Int16Array) => void;
   /** The file being played reached its end on its own. */
   onFileEnded?: () => void;
+  /** Which of the two the page settled on, once it knows. */
+  onEncodingChange?: (encoding: Encoding) => void;
 }
+
+/** Whether this browser encodes the audio or the bridge has to. */
+export type Encoding = "opus" | "pcm";
+
+/**
+ * Discord's own voice settings: 48 kHz stereo in 20 ms packets. The bitrate is
+ * what Discord uses for a normal channel; the packets it produces are a
+ * twentieth the size of the PCM they came from.
+ */
+const ENCODER_CONFIG = {
+  codec: "opus",
+  sampleRate: SAMPLE_RATE,
+  numberOfChannels: 2,
+  bitrate: 64_000,
+  opus: { frameDuration: 20_000 },
+} as AudioEncoderConfig;
+
+/** Beyond this the encoder is behind; dropping beats letting latency grow. */
+const MAX_ENCODER_QUEUE = 10;
 
 export interface MicOptions {
   deviceId?: string;
@@ -44,6 +72,10 @@ export class VoiceAudioEngine {
 
   #capture: AudioWorkletNode | null = null;
   #playback: AudioWorkletNode | null = null;
+
+  #encoder: AudioEncoder | null = null;
+  /** Microseconds, as WebCodecs counts them. */
+  #encoderTimestamp = 0;
 
   #micStream: MediaStream | null = null;
   #micSource: MediaStreamAudioSourceNode | null = null;
@@ -89,8 +121,9 @@ export class VoiceAudioEngine {
       channelCount: 2,
       channelCountMode: "explicit",
     });
+    await this.#startEncoder();
     this.#capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) =>
-      this.#handlers.onFrame(new Int16Array(event.data));
+      this.#handleFrame(new Int16Array(event.data));
     this.#mixBus.connect(this.#capture);
 
     // A node only runs while it reaches the destination, and the capture node's
@@ -105,6 +138,76 @@ export class VoiceAudioEngine {
       outputChannelCount: [2],
     });
     this.#playback.connect(this.#outputGain).connect(context.destination);
+  }
+
+  /** Which end is encoding: this browser, or the bridge. */
+  get encoding(): Encoding {
+    return this.#encoder?.state === "configured" ? "opus" : "pcm";
+  }
+
+  /**
+   * Sets up the browser's own Opus encoder. A browser without WebCodecs, or
+   * without Opus in it, simply keeps sending PCM — the bridge handles both.
+   */
+  async #startEncoder(): Promise<void> {
+    try {
+      if (typeof AudioEncoder === "undefined") return;
+      const support = await AudioEncoder.isConfigSupported(ENCODER_CONFIG);
+      if (!support.supported) return;
+
+      const encoder = new AudioEncoder({
+        output: (chunk) => {
+          const packet = new Uint8Array(chunk.byteLength);
+          chunk.copyTo(packet);
+          this.#handlers.onPacket(packet);
+        },
+        error: () => this.#dropEncoder(),
+      });
+      encoder.configure(ENCODER_CONFIG);
+      this.#encoder = encoder;
+    } catch {
+      this.#dropEncoder();
+    }
+  }
+
+  /** Falls back to PCM for the rest of this call. */
+  #dropEncoder() {
+    if (!this.#encoder) return;
+    try {
+      if (this.#encoder.state !== "closed") this.#encoder.close();
+    } catch {
+      // Already gone.
+    }
+    this.#encoder = null;
+    this.#handlers.onEncodingChange?.("pcm");
+  }
+
+  /** One 20 ms block out of the worklet, encoded here if this browser can. */
+  #handleFrame(pcm: Int16Array) {
+    const encoder = this.#encoder;
+    if (encoder?.state === "configured") {
+      // A backed-up encoder means the audio would arrive late anyway.
+      if (encoder.encodeQueueSize > MAX_ENCODER_QUEUE) return;
+      try {
+        const data = new AudioData({
+          format: "s16",
+          sampleRate: SAMPLE_RATE,
+          numberOfFrames: pcm.length / 2,
+          numberOfChannels: 2,
+          timestamp: this.#encoderTimestamp,
+          // The samples are already what WebCodecs wants; only the typing of a
+          // possibly-shared buffer stands in the way.
+          data: pcm as unknown as BufferSource,
+        });
+        this.#encoderTimestamp += 20_000;
+        encoder.encode(data);
+        data.close();
+        return;
+      } catch {
+        this.#dropEncoder();
+      }
+    }
+    this.#handlers.onFrame(pcm);
   }
 
   /** Opens or closes the microphone; the graph keeps running either way. */
@@ -215,6 +318,7 @@ export class VoiceAudioEngine {
 
   async stop(): Promise<void> {
     this.stopFile();
+    this.#dropEncoder();
     await this.setMicrophone(false).catch(() => {});
     this.#capture?.port.postMessage({ type: "stop" });
     this.#capture?.disconnect();

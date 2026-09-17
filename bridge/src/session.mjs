@@ -1,4 +1,4 @@
-import { PassThrough } from "node:stream";
+import { Readable } from "node:stream";
 import {
   EndBehaviorType,
   NoSubscriberBehavior,
@@ -13,6 +13,8 @@ import { FRAME_BYTES, decodeOutgoingAudio, encodeIncomingAudio } from "./protoco
 
 /** How much unsent audio may pile up before frames are dropped instead of delayed. */
 const MAX_QUEUED_FRAMES = 10;
+/** How often the page is told what this side is actually seeing. */
+const STATS_INTERVAL_MS = 2_000;
 /** Stop feeding a browser that is not keeping up rather than growing its socket buffer. */
 const MAX_SOCKET_BACKLOG = FRAME_BYTES * 50;
 /** How long to wait for Discord to finish the voice handshake. */
@@ -36,21 +38,29 @@ export class Session {
   #adapter = null;
   #connection = null;
   #player = null;
-  /** The browser's microphone and file audio, on its way to Discord. */
-  #pcm = null;
+  /** Opus packets on their way to Discord, one per 20 ms. */
+  #outgoing = null;
+  /** Only built for browsers that send PCM because they cannot encode Opus. */
+  #encoder = null;
+  /** Half-filled PCM, when a browser's frames do not line up with 20 ms. */
+  #pending = null;
   #decoders = new Map();
+  #statsTimer = null;
+  /** What this side has seen since the last report, for the page to display. */
+  #counts = { framesIn: 0, packetsOut: 0, dropped: 0, packetsIn: 0 };
 
   constructor(socket, { log, opus, id }) {
     this.#socket = socket;
     this.#log = log;
     this.#opus = opus;
     this.#id = id;
+    this.#startStats();
   }
 
   handleMessage(data, isBinary) {
     if (isBinary) {
-      const pcm = decodeOutgoingAudio(data);
-      if (pcm) this.#writeAudio(pcm);
+      const frame = decodeOutgoingAudio(data);
+      if (frame) this.#writeAudio(frame);
       return;
     }
 
@@ -161,23 +171,91 @@ export class Session {
   }
 
   /**
-   * The browser's audio, on its way out. One long-lived stream is fed 20 ms at
-   * a time, so muting and unmuting never has to build a new resource: the page
-   * simply sends silence.
+   * The browser's audio, on its way out.
+   *
+   * The stream carries finished Opus packets, which is what the voice
+   * connection wants: with `StreamType.Opus` @discordjs/voice builds no
+   * transcoding pipeline at all, so nothing here depends on it finding an
+   * encoder of its own. One long-lived stream means muting never has to build a
+   * new resource — the page simply sends quieter audio.
    */
   #startSending(connection) {
-    this.#pcm = new PassThrough({ highWaterMark: FRAME_BYTES * MAX_QUEUED_FRAMES });
+    this.#outgoing = new Readable({ objectMode: true, read() {} });
     this.#player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } });
-    this.#player.on("error", (cause) => this.#log(`player error: ${cause.message}`));
-    this.#player.play(createAudioResource(this.#pcm, { inputType: StreamType.Raw }));
+    this.#player.on("error", (cause) => {
+      this.#log(`player error: ${cause.message}`);
+      // Worth saying out loud: this is the failure that makes a bot look
+      // connected while nobody can hear it.
+      this.#send({ t: "error", message: `Audio could not be sent: ${cause.message}` });
+    });
+    this.#player.play(createAudioResource(this.#outgoing, { inputType: StreamType.Opus }));
     connection.subscribe(this.#player);
   }
 
-  #writeAudio(pcm) {
-    if (!this.#pcm) return;
+  /** @param {{ kind: "opus" | "pcm", payload: Buffer }} frame */
+  #writeAudio(frame) {
+    // Counted before anything else: audio arriving with nowhere to go is
+    // exactly the case the page needs to be able to see.
+    this.#counts.framesIn += 1;
+    if (!this.#outgoing) return;
+
     // Late audio is worse than missing audio: drop rather than queue.
-    if (this.#pcm.writableLength > FRAME_BYTES * MAX_QUEUED_FRAMES) return;
-    this.#pcm.write(pcm);
+    if (this.#outgoing.readableLength > MAX_QUEUED_FRAMES) {
+      this.#counts.dropped += 1;
+      return;
+    }
+
+    if (frame.kind === "opus") {
+      this.#outgoing.push(frame.payload);
+      this.#counts.packetsOut += 1;
+      return;
+    }
+
+    for (const block of this.#blocks(frame.payload)) {
+      try {
+        this.#encoder ??= this.#opus.createEncoder();
+        this.#outgoing.push(this.#encoder.encode(block));
+        this.#counts.packetsOut += 1;
+      } catch (cause) {
+        this.#log(`could not encode audio: ${cause.message}`);
+        this.#counts.dropped += 1;
+        return;
+      }
+    }
+  }
+
+  /**
+   * Cuts PCM into the exact 20 ms blocks Opus encodes, keeping whatever is left
+   * over for the next frame. A browser that sends 20 ms at a time — all of
+   * them, in practice — never leaves a remainder.
+   */
+  *#blocks(pcm) {
+    let buffer = this.#pending ? Buffer.concat([this.#pending, pcm]) : pcm;
+    let offset = 0;
+    while (buffer.length - offset >= FRAME_BYTES) {
+      yield buffer.subarray(offset, offset + FRAME_BYTES);
+      offset += FRAME_BYTES;
+    }
+    this.#pending = offset < buffer.length ? Buffer.from(buffer.subarray(offset)) : null;
+  }
+
+  /**
+   * A heartbeat of what this side has actually seen. Without it a page has no
+   * way to tell "my audio never arrived" from "it arrived and went nowhere".
+   */
+  #startStats() {
+    clearInterval(this.#statsTimer);
+    this.#statsTimer = setInterval(() => {
+      const counts = this.#counts;
+      this.#counts = { framesIn: 0, packetsOut: 0, dropped: 0, packetsIn: 0 };
+      this.#send({
+        t: "stats",
+        overMs: STATS_INTERVAL_MS,
+        ...counts,
+        player: this.#player?.state.status ?? "none",
+        queued: this.#outgoing?.readableLength ?? 0,
+      });
+    }, STATS_INTERVAL_MS);
   }
 
   /**
@@ -202,6 +280,7 @@ export class Session {
         if (this.#socket.bufferedAmount > MAX_SOCKET_BACKLOG) return;
         try {
           this.#sendBinary(encodeIncomingAudio(userId, decoder.decode(packet)));
+          this.#counts.packetsIn += 1;
         } catch (cause) {
           this.#log(`could not decode audio from ${userId}: ${cause.message}`);
         }
@@ -228,7 +307,10 @@ export class Session {
   close(reason) {
     if (this.#connection) this.#log(`voice connection closed (${reason})`);
     this.#player?.stop(true);
-    this.#pcm?.end();
+    this.#outgoing?.push(null);
+    this.#encoder?.destroy();
+    this.#encoder = null;
+    this.#pending = null;
     for (const decoder of this.#decoders.values()) decoder.destroy();
     this.#decoders.clear();
     try {
@@ -238,7 +320,14 @@ export class Session {
     }
     this.#connection = null;
     this.#player = null;
-    this.#pcm = null;
+    this.#outgoing = null;
+  }
+
+  /** Called when the browser goes away for good. */
+  dispose() {
+    clearInterval(this.#statsTimer);
+    this.#statsTimer = null;
+    this.close("browser disconnected");
   }
 
   #send(message) {

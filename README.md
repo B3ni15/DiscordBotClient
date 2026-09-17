@@ -225,13 +225,22 @@ controls:
 
 - **Mic on / off** — your microphone, straight into the channel. Self-mute keeps
   it open and sends silence, so unmuting is instant.
+- A live count of where the audio actually gets to — packets leaving this
+  browser, arriving at the worker, handed to Discord, and coming back from the
+  channel. "Nobody can hear me" has several very different causes, and the four
+  numbers tell them apart instead of leaving you to guess.
 - **Play file** — any audio the browser can decode (MP3, OGG, WAV, FLAC, M4A),
   with an optional loop and a "hear it here" monitor. No length limit.
 - **Mic and output volume**, and **deafen**, which silences this browser too.
 - Whoever is talking gets a green ring in the channel list, because the bridge
   is the side that receives their audio.
 
-What crosses the wire to the worker is plain PCM and the two voice handshake
+Where WebCodecs is available — every current browser — the page encodes the Opus
+itself, so what leaves the browser is what Discord receives: around 180 bytes
+per 20 ms instead of 3840, with no transcoding on either side. A browser without
+an encoder sends PCM and the worker encodes it.
+
+What crosses the wire to the worker is that audio and the two voice handshake
 events. The **bot token never leaves the browser**: Discord's voice protocol
 authenticates with the voice token from `VOICE_SERVER_UPDATE`, and the worker
 has no gateway connection of its own — when it needs an `op 4` sent, it hands

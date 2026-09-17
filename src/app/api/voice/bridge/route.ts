@@ -78,7 +78,7 @@ function upgrade(id: string, resolvedOpus: Awaited<ReturnType<typeof loadOpus>>)
       );
       socket.on("close", () => {
         clearTimeout(warning);
-        session.close("browser disconnected");
+        session.dispose();
       });
       socket.on("error", (cause: Error) => log(`socket error: ${cause.message}`));
     },

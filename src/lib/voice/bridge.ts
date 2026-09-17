@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { VoiceAudioEngine } from "./audioEngine";
+import { VoiceAudioEngine, type Encoding } from "./audioEngine";
 
 /**
  * The client half of the voice bridge.
@@ -27,6 +27,7 @@ const SETTINGS_KEY = "disbotclient:voiceBridge";
 /** Binary tags, matching `bridge/src/protocol.mjs`. */
 const AUDIO_OUT = 0x01;
 const AUDIO_IN = 0x02;
+const AUDIO_OUT_OPUS = 0x03;
 /** Beyond this the network is the bottleneck; dropping beats growing a queue. */
 const MAX_SOCKET_BACKLOG = 200_000;
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000];
@@ -60,6 +61,28 @@ export interface BridgeState {
   monitor: boolean;
   /** User ids currently talking, as the worker hears them. */
   speaking: string[];
+  /** Whether this browser encodes the audio or the worker has to. */
+  encoding: Encoding;
+  /**
+   * What each side has actually seen lately. The point of showing it is that
+   * "nobody can hear me" has two very different causes, and this tells them
+   * apart: audio that never left the browser, or audio that left and went
+   * nowhere.
+   */
+  flow: {
+    /** Packets a second this page sent. */
+    sent: number;
+    /** Packets a second the worker received. */
+    received: number;
+    /** Packets a second the worker handed to Discord. */
+    delivered: number;
+    /** Packets a second arriving from the channel. */
+    incoming: number;
+    /** Dropped on either side, a second. */
+    dropped: number;
+    /** What the worker's audio player is doing. */
+    player: string;
+  } | null;
   nowPlaying: { name: string; loop: boolean } | null;
 }
 
@@ -77,6 +100,8 @@ export const useBridge = create<BridgeState>(() => ({
   outputVolume: 1,
   monitor: false,
   speaking: [],
+  encoding: "pcm",
+  flow: null,
   nowPlaying: null,
 }));
 
@@ -86,11 +111,16 @@ let engine: VoiceAudioEngine | null = null;
 let closedByUser = false;
 let reconnectAttempt = 0;
 let sendGatewayPayload: ((payload: unknown) => void) | null = null;
+/** Where the client store's idea of the current call is read from. */
+let readActiveCall: (() => ActiveCall | null) | null = null;
 /** The call to put back together if the worker's instance goes away. */
 let lastJoin: { guildId: string; channelId: string; selfMute: boolean; selfDeaf: boolean } | null =
   null;
 /** Whether the microphone was open before the worker went away. */
 let micWasOpen = false;
+/** Counted since the last report from the worker, to show both ends at once. */
+let sentPackets = 0;
+let sentDropped = 0;
 
 /**
  * How the worker reaches Discord's gateway: it cannot, so it asks this page to
@@ -99,6 +129,26 @@ let micWasOpen = false;
  */
 export function setGatewaySender(sender: ((payload: unknown) => void) | null) {
   sendGatewayPayload = sender;
+}
+
+/** A call this bot is already in, as the client store knows it. */
+export interface ActiveCall {
+  guildId: string;
+  channelId: string;
+  selfMute: boolean;
+  selfDeaf: boolean;
+}
+
+/**
+ * Lets the worker pick up a call that was already running.
+ *
+ * Joining a channel works without the bridge, so the bot can easily be sitting
+ * in one by the time the worker connects — after a page reload, or when the
+ * bridge is started mid-call. Without this the bot would sit there hearing and
+ * saying nothing, with nothing to explain why.
+ */
+export function setActiveCallProvider(provider: (() => ActiveCall | null) | null) {
+  readActiveCall = provider;
 }
 
 export function bridgeConnected(): boolean {
@@ -191,7 +241,9 @@ export async function connectBridge(url?: string): Promise<void> {
     everOpened = true;
     reconnectAttempt = 0;
     useBridge.setState({ status: "connected", error: null });
-    // A call that was interrupted by an expiring worker picks up here.
+    // A call that was interrupted by an expiring worker picks up here, as does
+    // one that was already running before this worker was reached at all.
+    lastJoin ??= readActiveCall?.() ?? null;
     if (lastJoin) void resumeCall();
   };
   socket.onmessage = (event) => handleMessage(event.data);
@@ -319,7 +371,7 @@ export function bridgeLeave() {
   // The microphone is released rather than left open: a browser that keeps
   // showing a recording indicator outside a call is alarming, and rightly so.
   void engine?.setMicrophone(false).catch(() => {});
-  useBridge.setState({ voice: "idle", speaking: [], nowPlaying: null, micEnabled: false });
+  useBridge.setState({ voice: "idle", speaking: [], nowPlaying: null, micEnabled: false, flow: null });
 }
 
 /** The bot's own voice state, straight off this page's gateway. */
@@ -392,14 +444,17 @@ async function explainFailure(target: string) {
 async function ensureEngine(): Promise<VoiceAudioEngine> {
   if (engine?.running) return engine;
   const audio = new VoiceAudioEngine({
-    onFrame: sendAudio,
+    onPacket: sendOpusPacket,
+    onFrame: sendPcmFrame,
     onFileEnded: () => useBridge.setState({ nowPlaying: null }),
+    onEncodingChange: (encoding) => useBridge.setState({ encoding }),
   });
   await audio.start();
   const { micVolume, outputVolume, monitor } = useBridge.getState();
   audio.setMicVolume(micVolume);
   audio.setOutputVolume(outputVolume);
   audio.setMonitor(monitor);
+  useBridge.setState({ encoding: audio.encoding });
   engine = audio;
   return audio;
 }
@@ -408,16 +463,30 @@ function applyMicVolume(muted: boolean) {
   engine?.setMicVolume(muted ? 0 : useBridge.getState().micVolume);
 }
 
-function sendAudio(pcm: Int16Array) {
+/** An Opus packet this browser encoded: Discord receives it exactly as it is. */
+function sendOpusPacket(packet: Uint8Array) {
+  sendTagged(AUDIO_OUT_OPUS, packet);
+}
+
+/** The same 20 ms as PCM, for a browser that has no encoder of its own. */
+function sendPcmFrame(pcm: Int16Array) {
+  sendTagged(AUDIO_OUT, new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+}
+
+function sendTagged(tag: number, body: Uint8Array) {
   if (socket?.readyState !== WebSocket.OPEN) return;
   if (useBridge.getState().voice !== "ready") return;
   // Late audio is worse than missing audio, so a backed-up socket drops frames.
-  if (socket.bufferedAmount > MAX_SOCKET_BACKLOG) return;
+  if (socket.bufferedAmount > MAX_SOCKET_BACKLOG) {
+    sentDropped += 1;
+    return;
+  }
 
-  const frame = new Uint8Array(1 + pcm.byteLength);
-  frame[0] = AUDIO_OUT;
-  frame.set(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength), 1);
+  const frame = new Uint8Array(1 + body.byteLength);
+  frame[0] = tag;
+  frame.set(body, 1);
   socket.send(frame);
+  sentPackets += 1;
 }
 
 function handleMessage(data: string | ArrayBuffer) {
@@ -464,6 +533,23 @@ function handleMessage(data: string | ArrayBuffer) {
             : [...current.speaking, userId]
           : current.speaking.filter((id) => id !== userId),
       }));
+      break;
+    }
+    case "stats": {
+      const perSecond = (value: unknown) =>
+        Math.round((Number(value) || 0) / ((Number(message.overMs) || 1_000) / 1_000));
+      useBridge.setState({
+        flow: {
+          sent: Math.round(sentPackets / ((Number(message.overMs) || 1_000) / 1_000)),
+          received: perSecond(message.framesIn),
+          delivered: perSecond(message.packetsOut),
+          incoming: perSecond(message.packetsIn),
+          dropped: perSecond(message.dropped) + Math.round(sentDropped),
+          player: String(message.player ?? "none"),
+        },
+      });
+      sentPackets = 0;
+      sentDropped = 0;
       break;
     }
     case "error":

@@ -38,6 +38,7 @@ import {
   feedVoiceState,
   loadBridgeSettings,
   resumingVoice,
+  setActiveCallProvider,
   setGatewaySender,
   useBridge,
 } from "@/lib/voice/bridge";
@@ -293,6 +294,18 @@ export const useClient = create<ClientState>((set, get) => ({
     // the payloads it needs sent go out over this one.
     loadBridgeSettings();
     setGatewaySender((payload) => gateway?.sendRaw(payload as GatewayPayload));
+    // A bridge that connects mid-call takes over the call it finds.
+    setActiveCallProvider(() => {
+      const voice = get().selfVoice;
+      return voice
+        ? {
+            guildId: voice.guildId,
+            channelId: voice.channelId,
+            selfMute: voice.selfMute,
+            selfDeaf: voice.selfDeaf,
+          }
+        : null;
+    });
     if (useBridge.getState().autoConnect) void connectBridge();
 
     gateway.connect();
@@ -301,6 +314,7 @@ export const useClient = create<ClientState>((set, get) => ({
   logout: () => {
     localStorage.removeItem(TOKEN_KEY);
     setGatewaySender(null);
+    setActiveCallProvider(null);
     void disconnectBridge();
     gateway?.disconnect();
     gateway = null;
