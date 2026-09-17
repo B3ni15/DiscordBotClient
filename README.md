@@ -1,4 +1,4 @@
-# disbotclient
+c# disbotclient
 
 A Discord client for your bot that runs in the browser.
 [disbotclient.xyz](https://disbotclient.xyz)
