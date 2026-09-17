@@ -10,8 +10,8 @@
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:sql": "prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --script",
-    "db:push": "node scripts/d1-migrate.mjs",
-    "db:status": "node scripts/d1-migrate.mjs --status",
+    "db:push": "node --env-file-if-exists=.env scripts/d1-migrate.mjs",
+    "db:status": "node --env-file-if-exists=.env scripts/d1-migrate.mjs --status",
     "db:local": "prisma db push --schema prisma/schema.prisma"
   },
   "dependencies": {
