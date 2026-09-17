@@ -149,6 +149,15 @@ export class GatewayClient {
     this.#sendVoiceState(request);
   }
 
+  /**
+   * Sends a payload the client itself did not compose. The voice bridge needs
+   * this: it speaks the voice protocol but has no gateway of its own, so the
+   * `op 4` payloads it produces travel out over this socket.
+   */
+  sendRaw(payload: GatewayPayload) {
+    this.#send(payload);
+  }
+
   /** The voice channel the bot is meant to be in, as last requested. */
   get voiceState(): VoiceStateRequest | null {
     return this.#voice;

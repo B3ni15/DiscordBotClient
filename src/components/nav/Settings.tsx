@@ -3,6 +3,7 @@
 import { AccountSection } from "@/components/account/AccountSection";
 import { NotificationSettings } from "@/components/notifications/NotificationSettings";
 import { PresenceEditor } from "@/components/nav/PresenceEditor";
+import { BridgeSettings } from "@/components/voice/BridgeSettings";
 import { BotTag } from "@/components/ui/BotTag";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { isVerifiedBot, userBadges } from "@/lib/discord/userFlags";
@@ -113,6 +114,8 @@ export function Settings({ onClose, className }: SettingsProps) {
           </p>
           {error && <p className="mt-1 text-xs leading-relaxed text-danger">{error}</p>}
         </section>
+
+        <BridgeSettings />
 
         <section className="mb-6">
           <h3 className="pb-2 text-xs font-semibold text-muted">Token</h3>

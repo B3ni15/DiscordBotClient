@@ -8,6 +8,7 @@ import { useGuildPowers } from "@/lib/discord/useGuildPowers";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { displayName, memberColorHex } from "@/lib/discord/roles";
 import { useClient, type VoiceState } from "@/lib/store/client";
+import { useBridge } from "@/lib/voice/bridge";
 import { openMenuFor } from "@/lib/store/contextMenu";
 
 const STAGE = 13;
@@ -152,6 +153,9 @@ function Occupant({
   const user = member?.user;
   const name = member ? displayName(member) : state.userId;
   const color = member ? memberColorHex(member, roles) : null;
+  // Only the bridge can tell who is actually talking: it is the side that
+  // receives the audio.
+  const talking = useBridge((bridge) => bridge.speaking.includes(state.userId));
 
   const muted = state.selfMute || state.serverMute;
   const deafened = state.selfDeaf || state.serverDeaf;
@@ -170,7 +174,9 @@ function Occupant({
         <img
           src={userAvatarUrl(user, 32)}
           alt=""
-          className={`h-6 w-6 shrink-0 rounded-full ${muted || deafened ? "opacity-50" : ""}`}
+          className={`h-6 w-6 shrink-0 rounded-full ${muted || deafened ? "opacity-50" : ""} ${
+            talking ? "ring-2 ring-online" : ""
+          }`}
         />
       ) : (
         <span className="h-6 w-6 shrink-0 rounded-full bg-raised" aria-hidden />

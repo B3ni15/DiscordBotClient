@@ -8,6 +8,7 @@ import { useGuildPowers } from "@/lib/discord/useGuildPowers";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
 import { DeafIcon, DisconnectIcon, HeadphonesIcon, MicIcon, MicOffIcon, SoundboardIcon } from "./icons";
+import { StreamControls } from "./StreamControls";
 
 const STAGE = 13;
 
@@ -124,13 +125,8 @@ export function VoicePanel() {
         </button>
       )}
 
-      {/*
-        Said once, where it matters: the bot is in the channel, but nothing it
-        hears or says travels over this connection.
-      */}
-      <p className="mt-1.5 px-1 text-[10px] leading-snug text-faint">
-        No microphone: a browser cannot stream voice. Use the soundboard to make sound.
-      </p>
+      {/* Microphone, file playback and listening, when a bridge is running. */}
+      <StreamControls />
     </div>
   );
 }

@@ -1,0 +1,25 @@
+{
+  "name": "disbotclient-voice-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local voice worker for DisbotClient: holds the Discord voice connection a browser cannot open.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node test/smoke.mjs"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.19.2",
+    "@snazzah/davey": "^0.1.12",
+    "libsodium-wrappers": "^0.8.4",
+    "opusscript": "^0.1.1",
+    "ws": "^8.21.3"
+  },
+  "optionalDependencies": {
+    "@discordjs/opus": "^0.10.0"
+  }
+}

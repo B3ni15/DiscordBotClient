@@ -17,7 +17,7 @@ import type {
 import { api } from "@/lib/discord/api";
 import { guildApi } from "@/lib/discord/guildApi";
 import { GatewayIntent, hasIntent } from "@/lib/discord/constants";
-import { GatewayClient, type GatewayStatus } from "@/lib/discord/gateway";
+import { GatewayClient, type GatewayPayload, type GatewayStatus } from "@/lib/discord/gateway";
 import {
   DEFAULT_SELF_PRESENCE,
   loadSelfPresence,
@@ -27,6 +27,19 @@ import {
 } from "@/lib/discord/selfPresence";
 import { RestClient } from "@/lib/discord/rest";
 import { rememberDM, type DMUserInfo } from "@/components/nav/dmStore";
+import {
+  bridgeConnected,
+  bridgeJoin,
+  bridgeLeave,
+  bridgeUpdate,
+  connectBridge,
+  disconnectBridge,
+  feedVoiceServer,
+  feedVoiceState,
+  loadBridgeSettings,
+  setGatewaySender,
+  useBridge,
+} from "@/lib/voice/bridge";
 import { useAccount } from "@/lib/store/account";
 import { useUI } from "@/lib/store/ui";
 
@@ -187,6 +200,11 @@ export interface ClientState {
 let rest: RestClient | null = null;
 let gateway: GatewayClient | null = null;
 
+/** True while the bridge holds the voice connection, rather than nothing at all. */
+function bridgeStreaming(): boolean {
+  return bridgeConnected() && useBridge.getState().voice !== "idle";
+}
+
 export const useClient = create<ClientState>((set, get) => ({
   token: null,
   status: "idle",
@@ -269,11 +287,20 @@ export const useClient = create<ClientState>((set, get) => ({
       if (event === "READY") gateway?.setPresence(toGatewayPresence(get().selfPresence));
       handleDispatch(set, get, event, data);
     });
+
+    // The voice bridge speaks Discord's voice protocol but owns no gateway, so
+    // the payloads it needs sent go out over this one.
+    loadBridgeSettings();
+    setGatewaySender((payload) => gateway?.sendRaw(payload as GatewayPayload));
+    if (useBridge.getState().autoConnect) void connectBridge();
+
     gateway.connect();
   },
 
   logout: () => {
     localStorage.removeItem(TOKEN_KEY);
+    setGatewaySender(null);
+    void disconnectBridge();
     gateway?.disconnect();
     gateway = null;
     rest = null;
@@ -362,7 +389,11 @@ export const useClient = create<ClientState>((set, get) => ({
     // Moving between channels keeps the mute and deafen the user already chose.
     const selfMute = current?.selfMute ?? false;
     const selfDeaf = current?.selfDeaf ?? false;
-    gateway.setVoiceState({ guildId, channelId, selfMute, selfDeaf });
+
+    // With the bridge running the join belongs to it: it composes the same op 4
+    // and hands it back here to send, then opens the audio connection behind it.
+    if (bridgeConnected()) bridgeJoin(guildId, channelId, { selfMute, selfDeaf });
+    else gateway.setVoiceState({ guildId, channelId, selfMute, selfDeaf });
     set({ selfVoice: { guildId, channelId, selfMute, selfDeaf, connecting: true } });
 
     // Discord answers a refused join with silence rather than an error, so a
@@ -380,6 +411,9 @@ export const useClient = create<ClientState>((set, get) => ({
   leaveVoice: () => {
     const current = get().selfVoice;
     if (!current) return;
+    // The bridge tears its own connection down first; the op 4 below is what
+    // actually takes the bot out of the channel either way.
+    if (bridgeConnected()) bridgeLeave();
     gateway?.setVoiceState({
       guildId: current.guildId,
       channelId: null,
@@ -394,12 +428,14 @@ export const useClient = create<ClientState>((set, get) => ({
     if (!current) return;
     // Discord's own client lifts the deafen as soon as you unmute.
     const selfDeaf = mute ? current.selfDeaf : false;
-    gateway?.setVoiceState({
-      guildId: current.guildId,
-      channelId: current.channelId,
-      selfMute: mute,
-      selfDeaf,
-    });
+    if (bridgeStreaming()) bridgeUpdate({ selfMute: mute, selfDeaf });
+    else
+      gateway?.setVoiceState({
+        guildId: current.guildId,
+        channelId: current.channelId,
+        selfMute: mute,
+        selfDeaf,
+      });
     set({ selfVoice: { ...current, selfMute: mute, selfDeaf } });
   },
 
@@ -408,12 +444,14 @@ export const useClient = create<ClientState>((set, get) => ({
     if (!current) return;
     // Deafening mutes as well: there is no "I hear nothing but keep talking".
     const selfMute = deaf ? true : current.selfMute;
-    gateway?.setVoiceState({
-      guildId: current.guildId,
-      channelId: current.channelId,
-      selfMute,
-      selfDeaf: deaf,
-    });
+    if (bridgeStreaming()) bridgeUpdate({ selfMute, selfDeaf: deaf });
+    else
+      gateway?.setVoiceState({
+        guildId: current.guildId,
+        channelId: current.channelId,
+        selfMute,
+        selfDeaf: deaf,
+      });
     set({ selfVoice: { ...current, selfMute, selfDeaf: deaf } });
   },
 
@@ -615,6 +653,8 @@ function handleDispatch(
       const data = raw as RawVoiceState & { guild_id?: string };
       if (!data.guild_id || !data.user_id) break;
       const guildId = data.guild_id;
+      /** Set when this update is about the bot, which the bridge needs to see. */
+      let selfVoiceUpdate: unknown = null;
       set((state) => {
         const current = { ...(state.voiceStatesByGuild[guildId] ?? {}) };
         // A null channel_id means the user left voice altogether.
@@ -628,6 +668,7 @@ function handleDispatch(
         // This is also how a moderator moving or disconnecting the bot reaches
         // the UI, so Discord's word wins over what this client last asked for.
         if (data.user_id === state.user?.id) {
+          selfVoiceUpdate = data;
           next.selfVoice = data.channel_id
             ? {
                 guildId,
@@ -640,6 +681,13 @@ function handleDispatch(
         }
         return next;
       });
+      // The bridge's voice connection is built from these two events; they are
+      // forwarded after the store settles rather than from inside the updater.
+      if (selfVoiceUpdate) feedVoiceState(selfVoiceUpdate);
+      break;
+    }
+    case "VOICE_SERVER_UPDATE": {
+      feedVoiceServer(raw);
       break;
     }
     case "GUILD_DELETE": {

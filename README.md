@@ -61,6 +61,7 @@ It runs entirely from the browser, connects directly to the Discord Gateway, and
 | 🛠️ | **Bot tooling** | Manage slash commands and handle incoming interactions |
 | 🎙️ | **Voice** | Join voice channels, mute/deafen the bot, moderate other members |
 | 🔈 | **Soundboard** | Upload MP3/OGG sounds and play them into the channel the bot sits in |
+| 🎧 | **Live audio** | Microphone, audio files and listening, through the local voice bridge |
 | 🔐 | **Privacy-first** | Tokens and local preferences remain in the browser |
 
 ---
@@ -214,14 +215,44 @@ moving, disconnecting, muting or deafening the bot is picked up live.
 Other members can be **server muted, deafened or disconnected** from their
 right-click menu, permissions and role hierarchy permitting.
 
-### Playing MP3s: the soundboard
+### Live audio: the voice bridge
 
 A web page cannot open the UDP socket Discord's voice servers exchange Opus
-frames over, so this client streams no microphone audio — the bot sits in the
-channel silently.
+frames over. The [`bridge/`](bridge) worker opens it instead, and with it
+running the bot has a real microphone, plays audio files of any length, and
+hears the channel:
 
-Sound still comes out of it through Discord's **soundboard**, which is mixed by
-Discord's own voice servers and driven by a plain REST call:
+```bash
+cd bridge
+npm install
+npm start
+```
+
+Paste the address it prints (secret included) into **Settings → Voice bridge**,
+press **Connect**, and the voice strip grows its live controls:
+
+- **Mic on / off** — your microphone, straight into the channel. Self-mute keeps
+  it open and sends silence, so unmuting is instant.
+- **Play file** — any audio the browser can decode (MP3, OGG, WAV, FLAC, M4A),
+  with an optional loop and a "hear it here" monitor. No length limit.
+- **Mic and output volume**, and **deafen**, which silences this browser too.
+- Whoever is talking gets a green ring in the channel list, because the bridge
+  is the side that receives their audio.
+
+What crosses the wire to the worker is plain PCM and the two voice handshake
+events. The **bot token never leaves the browser**: Discord's voice protocol
+authenticates with the voice token from `VOICE_SERVER_UPDATE`, and the worker
+has no gateway connection of its own — when it needs an `op 4` sent, it hands
+the payload back to this page to send. [`bridge/README.md`](bridge/README.md)
+covers the flags, the security model and the protocol.
+
+Without the bridge the client still joins voice channels, mutes and moderates,
+and plays soundboard sounds; it just carries no audio of its own.
+
+### Short sounds without the bridge: the soundboard
+
+Discord's **soundboard** is mixed by Discord's own voice servers and driven by a
+plain REST call, so it works from the browser alone:
 
 1. Open the soundboard from the voice strip or a voice channel's menu.
 2. Upload an **MP3 or OGG** file (Discord's limits: max 5.2 seconds and 512 KB;
@@ -422,7 +453,7 @@ These limitations primarily come from Discord's bot API:
 - **Presence requires the Presence Intent.**
 - **No user bios:** bot accounts cannot use the user-profile endpoint in the same way as user accounts.
 - **No Nitro / Quest-style user badges:** these are not exposed through the bot-accessible profile data.
-- **No microphone or listening:** the bot can sit in a voice channel, mute and deafen itself, and play soundboard sounds, but a browser cannot open Discord's voice UDP socket, so no audio is streamed either way.
+- **Live audio needs the local bridge:** a browser cannot open Discord's voice UDP socket, so the microphone, file streaming and listening run through the small worker in [`bridge/`](bridge). Everything else, the soundboard included, works from the browser alone.
 
 ---
 
