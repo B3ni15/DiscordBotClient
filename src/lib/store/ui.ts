@@ -4,7 +4,7 @@ import { create } from "zustand";
 import type { ChannelType } from "discord-api-types/v10";
 
 /** Which of the mutually exclusive right-hand panels is open. */
-export type SidePanel = "pins" | "search" | "settings" | "commands" | null;
+export type SidePanel = "pins" | "search" | "settings" | "commands" | "soundboard" | null;
 
 /**
  * The modal the app is showing, if any. Dialogs live in the store rather than

@@ -32,6 +32,9 @@ import { useUI } from "@/lib/store/ui";
 
 const TOKEN_KEY = "disbotclient:token";
 
+/** How long a join waits for Discord to echo the voice state back. */
+const VOICE_JOIN_TIMEOUT_MS = 10_000;
+
 /** One activity line of a presence, e.g. "Playing Minecraft". */
 /** The artwork an activity publishes, as raw asset keys. */
 export interface ActivityAssets {
@@ -86,6 +89,22 @@ export interface VoiceState {
   member?: APIGuildMember;
 }
 
+/**
+ * Where this bot is sitting in voice, as this client asked for it.
+ *
+ * The browser cannot open Discord's voice UDP socket, so there is no audio
+ * stream behind this: the bot shows up in the channel, can be muted, deafened
+ * and moved like any member, and makes sound through the soundboard.
+ */
+export interface SelfVoice {
+  guildId: string;
+  channelId: string;
+  selfMute: boolean;
+  selfDeaf: boolean;
+  /** True until Discord echoes the voice state back over the gateway. */
+  connecting: boolean;
+}
+
 export interface TypingUser {
   userId: string;
   name: string;
@@ -116,6 +135,8 @@ export interface ClientState {
   presenceEnabled: boolean;
   /** Who is sitting in which voice channel, per guild, keyed by user id. */
   voiceStatesByGuild: Record<string, Record<string, VoiceState>>;
+  /** The voice channel this bot is in, or null when it is not in one. */
+  selfVoice: SelfVoice | null;
   /** The presence this bot publishes for itself. */
   selfPresence: SelfPresence;
   typingByChannel: Record<string, TypingUser[]>;
@@ -132,6 +153,14 @@ export interface ClientState {
   sendMessage: (channelId: string, content: string, files?: File[]) => Promise<void>;
   /** Publishes a new presence for this bot and remembers it for next time. */
   setSelfPresence: (presence: SelfPresence) => void;
+  /** Puts the bot into a voice channel, or moves it between two of them. */
+  joinVoice: (guildId: string, channelId: string) => void;
+  /** Leaves the voice channel the bot is in; a no-op when it is in none. */
+  leaveVoice: () => void;
+  /** Mutes or unmutes the bot itself. */
+  setSelfMute: (mute: boolean) => void;
+  /** Deafens or undeafens the bot itself; deafening mutes it too, as Discord does. */
+  setSelfDeaf: (deaf: boolean) => void;
   /** Opens (or re-opens) the DM with a user, files it under Direct Messages and selects it. */
   openDM: (userId: string, about?: DMUserInfo) => Promise<string>;
   /** Fetches a channel the gateway never announced (a DM, an archived thread). */
@@ -173,6 +202,7 @@ export const useClient = create<ClientState>((set, get) => ({
   presenceByGuild: {},
   presenceEnabled: false,
   voiceStatesByGuild: {},
+  selfVoice: null,
   selfPresence: DEFAULT_SELF_PRESENCE,
   typingByChannel: {},
   selectedGuildId: null,
@@ -226,7 +256,11 @@ export const useClient = create<ClientState>((set, get) => ({
     gateway = new GatewayClient(normalizedToken);
     gateway.setMobile(presence.mobile);
     gateway.setPresence(toGatewayPresence(presence));
-    gateway.on("status", (status) => set({ status }));
+    // A closed socket takes the voice state with it: Discord drops the bot out
+    // of the channel the moment the session that put it there is gone.
+    gateway.on("status", (status) =>
+      set(status === "closed" ? { status, selfVoice: null } : { status }),
+    );
     gateway.on("intents", (intents) =>
       set({ presenceEnabled: hasIntent(intents, GatewayIntent.GuildPresences) }),
     );
@@ -258,6 +292,7 @@ export const useClient = create<ClientState>((set, get) => ({
       presenceByGuild: {},
       presenceEnabled: false,
       voiceStatesByGuild: {},
+      selfVoice: null,
       typingByChannel: {},
       selectedGuildId: null,
       selectedChannelId: null,
@@ -316,6 +351,70 @@ export const useClient = create<ClientState>((set, get) => ({
     // Toggling mobile re-identifies, which replays the presence from IDENTIFY.
     gateway?.setMobile(presence.mobile);
     gateway?.setPresence(toGatewayPresence(presence));
+  },
+
+  joinVoice: (guildId, channelId) => {
+    if (!gateway || gateway.status !== "ready") {
+      set({ error: "Not connected to Discord yet." });
+      return;
+    }
+    const current = get().selfVoice;
+    // Moving between channels keeps the mute and deafen the user already chose.
+    const selfMute = current?.selfMute ?? false;
+    const selfDeaf = current?.selfDeaf ?? false;
+    gateway.setVoiceState({ guildId, channelId, selfMute, selfDeaf });
+    set({ selfVoice: { guildId, channelId, selfMute, selfDeaf, connecting: true } });
+
+    // Discord answers a refused join with silence rather than an error, so a
+    // voice state that never arrives is reported instead of spinning forever.
+    setTimeout(() => {
+      const pending = get().selfVoice;
+      if (!pending?.connecting || pending.channelId !== channelId) return;
+      set({
+        selfVoice: null,
+        error: "Discord did not put the bot in that channel — check its Connect permission.",
+      });
+    }, VOICE_JOIN_TIMEOUT_MS);
+  },
+
+  leaveVoice: () => {
+    const current = get().selfVoice;
+    if (!current) return;
+    gateway?.setVoiceState({
+      guildId: current.guildId,
+      channelId: null,
+      selfMute: current.selfMute,
+      selfDeaf: current.selfDeaf,
+    });
+    set({ selfVoice: null });
+  },
+
+  setSelfMute: (mute) => {
+    const current = get().selfVoice;
+    if (!current) return;
+    // Discord's own client lifts the deafen as soon as you unmute.
+    const selfDeaf = mute ? current.selfDeaf : false;
+    gateway?.setVoiceState({
+      guildId: current.guildId,
+      channelId: current.channelId,
+      selfMute: mute,
+      selfDeaf,
+    });
+    set({ selfVoice: { ...current, selfMute: mute, selfDeaf } });
+  },
+
+  setSelfDeaf: (deaf) => {
+    const current = get().selfVoice;
+    if (!current) return;
+    // Deafening mutes as well: there is no "I hear nothing but keep talking".
+    const selfMute = deaf ? true : current.selfMute;
+    gateway?.setVoiceState({
+      guildId: current.guildId,
+      channelId: current.channelId,
+      selfMute,
+      selfDeaf: deaf,
+    });
+    set({ selfVoice: { ...current, selfMute, selfDeaf: deaf } });
   },
 
   hydrateChannel: async (channelId) => {
@@ -521,7 +620,25 @@ function handleDispatch(
         // A null channel_id means the user left voice altogether.
         if (data.channel_id) current[data.user_id!] = toVoiceState(data);
         else delete current[data.user_id!];
-        return { voiceStatesByGuild: { ...state.voiceStatesByGuild, [guildId]: current } };
+
+        const next: Partial<ClientState> = {
+          voiceStatesByGuild: { ...state.voiceStatesByGuild, [guildId]: current },
+        };
+
+        // This is also how a moderator moving or disconnecting the bot reaches
+        // the UI, so Discord's word wins over what this client last asked for.
+        if (data.user_id === state.user?.id) {
+          next.selfVoice = data.channel_id
+            ? {
+                guildId,
+                channelId: data.channel_id,
+                selfMute: Boolean(data.self_mute),
+                selfDeaf: Boolean(data.self_deaf),
+                connecting: false,
+              }
+            : null;
+        }
+        return next;
       });
       break;
     }
@@ -539,6 +656,8 @@ function handleDispatch(
           voiceStatesByGuild: Object.fromEntries(
             Object.entries(state.voiceStatesByGuild).filter(([guildId]) => guildId !== id),
           ),
+          // Leaving the server takes the bot out of its voice channel too.
+          selfVoice: state.selfVoice?.guildId === id ? null : state.selfVoice,
           selectedGuildId: state.selectedGuildId === id ? null : state.selectedGuildId,
         };
       });

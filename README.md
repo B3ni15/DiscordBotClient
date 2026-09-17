@@ -59,7 +59,8 @@ It runs entirely from the browser, connects directly to the Discord Gateway, and
 | 💌 | **DMs** | Open direct conversations by user ID and remember them locally |
 | 🔔 | **Notifications** | Desktop notifications, unread badges and local mutes |
 | 🛠️ | **Bot tooling** | Manage slash commands and handle incoming interactions |
-| 🎙️ | **Voice awareness** | See voice/stage channels and their current participants |
+| 🎙️ | **Voice** | Join voice channels, mute/deafen the bot, moderate other members |
+| 🔈 | **Soundboard** | Upload MP3/OGG sounds and play them into the channel the bot sits in |
 | 🔐 | **Privacy-first** | Tokens and local preferences remain in the browser |
 
 ---
@@ -78,7 +79,7 @@ That includes:
 - Live Gateway events
 - Custom server emoji
 - Threads and pins
-- Voice/stage channel occupancy
+- Voice/stage channel occupancy, and sitting in a voice channel
 - Bot-accessible profile information
 - Slash commands
 - Incoming interactions
@@ -182,7 +183,7 @@ This information is stored in browser `localStorage` and is not uploaded to the 
 
 ## 🎙️ Voice & stage channels
 
-The client can display voice and stage channels together with their current state:
+The client shows voice and stage channels together with their current state:
 
 - Current participants
 - Microphone state
@@ -192,11 +193,51 @@ The client can display voice and stage channels together with their current stat
 - Channel user limit
 - Voice-channel text chat
 
-### Why can't DisbotClient join voice?
+### Joining a voice channel
 
-The actual voice stream is not currently implemented.
+Hover a voice channel in the sidebar and press the microphone button (or use the
+channel's right-click menu) to put the bot in it. Joining, moving and leaving all
+go over the Gateway (`op 4`), which a browser can speak, so no extra service is
+needed.
 
-Discord's browser client uses a WebRTC-based voice flow that is not exposed as a documented public browser API for this use case. DisbotClient therefore keeps voice streaming separate rather than relying on an unsupported workaround.
+Once connected, a **Voice connected** strip appears above the account panel with:
+
+- **Mute** and **Deafen** for the bot itself — exactly the `self_mute` /
+  `self_deaf` flags Discord shows to everyone else in the channel
+- **Leave**, and **Go on stage** in a stage channel (needs *Mute Members*)
+- A shortcut to the **soundboard**
+
+The voice state survives a dropped socket: if the Gateway session cannot be
+resumed, the client re-joins the channel after it identifies again. A moderator
+moving, disconnecting, muting or deafening the bot is picked up live.
+
+Other members can be **server muted, deafened or disconnected** from their
+right-click menu, permissions and role hierarchy permitting.
+
+### Playing MP3s: the soundboard
+
+A web page cannot open the UDP socket Discord's voice servers exchange Opus
+frames over, so this client streams no microphone audio — the bot sits in the
+channel silently.
+
+Sound still comes out of it through Discord's **soundboard**, which is mixed by
+Discord's own voice servers and driven by a plain REST call:
+
+1. Open the soundboard from the voice strip or a voice channel's menu.
+2. Upload an **MP3 or OGG** file (Discord's limits: max 5.2 seconds and 512 KB;
+   the upload form checks both before sending). This needs *Create Expressions*.
+3. Click a sound to play it into the channel the bot is in. The ▶ button beside
+   it previews the sound in this browser only.
+
+Discord refuses a soundboard sound from a member who is muted or deafened, so
+the panel says so instead of letting the call fail. Playing needs *Speak* and
+*Use Soundboard* in the channel; a sound borrowed from another server also needs
+*Use External Sounds*.
+
+One honest caveat: Discord requires the sender to be *connected* to the voice
+channel, and this client's connection is the Gateway voice state alone. If
+Discord ever declines a sound on that basis, the panel shows the error it
+returned rather than hiding it.
 
 ---
 
@@ -381,13 +422,12 @@ These limitations primarily come from Discord's bot API:
 - **Presence requires the Presence Intent.**
 - **No user bios:** bot accounts cannot use the user-profile endpoint in the same way as user accounts.
 - **No Nitro / Quest-style user badges:** these are not exposed through the bot-accessible profile data.
-- **No voice streaming:** voice/stage channels and participants are visible, but the actual voice stream cannot currently be joined.
+- **No microphone or listening:** the bot can sit in a voice channel, mute and deafen itself, and play soundboard sounds, but a browser cannot open Discord's voice UDP socket, so no audio is streamed either way.
 
 ---
 
 ## 🗺️ Roadmap
 
-- [ ] Browser voice connection
 - [ ] Incoming interaction components
 - [ ] Button interactions
 - [ ] Select menu interactions
