@@ -16,6 +16,28 @@ export function userAvatarUrl(
   return `${CDN_BASE}/embed/avatars/${index}.png`;
 }
 
+/** A member's per-server avatar, which overrides the account-wide one. */
+export function memberAvatarUrl(
+  guildId: string,
+  userId: string,
+  avatar: string | null | undefined,
+  size = 128,
+): string | null {
+  if (!avatar) return null;
+  const ext = avatar.startsWith("a_") ? "gif" : "webp";
+  return `${CDN_BASE}/guilds/${guildId}/users/${userId}/avatars/${avatar}.${ext}?size=${size}`;
+}
+
+/** Profile banner image, when the account has one. */
+export function userBannerUrl(
+  user: { id: string; banner?: string | null },
+  size = 480,
+): string | null {
+  if (!user.banner) return null;
+  const ext = user.banner.startsWith("a_") ? "gif" : "webp";
+  return `${CDN_BASE}/banners/${user.id}/${user.banner}.${ext}?size=${size}`;
+}
+
 export function guildIconUrl(guild: { id: string; icon: string | null }, size = 128) {
   if (!guild.icon) return null;
   const ext = guild.icon.startsWith("a_") ? "gif" : "webp";

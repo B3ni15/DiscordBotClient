@@ -20,13 +20,37 @@ Production build:
 npm run build
 ```
 
+## Privacy — no data is stored
+
+There is no account, no sign-up and no database. Nothing you do here is stored
+on a server.
+
+- **Your token** lives in this browser's `localStorage` under
+  `disbotclient:token` and nowhere else. Signing out deletes it.
+- **Your DM list, mutes and notification settings** are `localStorage` as well.
+  They never leave the browser, which is also why they do not follow you to
+  another device.
+- **The API proxy** (`/api/discord/*`) forwards a request to Discord and streams
+  the answer back. It copies only the `authorization`, `content-type` and
+  `x-audit-log-reason` headers, writes nothing to disk and logs neither the
+  token nor the messages. It is stateless: restart it and it knows nothing.
+- **Messages are never copied anywhere.** They are read from Discord into memory
+  for as long as the tab is open and are gone when you close it.
+- **The gateway connection** is made by your browser straight to Discord.
+- **The hosted site** at [disbotclient.xyz](https://disbotclient.xyz) counts
+  anonymous page views with Vercel Web Analytics. It sees no Discord data, no
+  token and no message content. Self-host and it is not there at all.
+
+If you would rather trust nothing, run it yourself — see *Run it* above.
+
 ## Your token
 
 Find it on the Bot tab of the
 [Developer Portal](https://discord.com/developers/applications). Turn on the
-`MESSAGE CONTENT` and `SERVER MEMBERS` intents there as well, or message text
-arrives empty and the member list stays empty. If neither is enabled, the
-client connects without privileged intents instead of failing.
+`MESSAGE CONTENT`, `SERVER MEMBERS` and `PRESENCE` intents there as well, or
+message text arrives empty, the member list stays empty and nobody shows up as
+online. Whichever of them are off, the client steps down one intent at a time
+and connects with the rest instead of failing.
 
 Use a **bot** token only. A user account token ("selfbot") violates Discord's
 terms of service, and this client does not support it.
@@ -49,8 +73,13 @@ terms of service, and this client does not support it.
 - Pinned messages
 - Search — tries Discord's search endpoint, falls back to searching the
   history already loaded when the bot token is rejected (see limits below)
-- Direct messages opened by user ID, remembered locally
-- Member list grouped by hoisted role, with role colours and a user card
+- Direct messages opened by user ID or from any member card, remembered
+  locally together with who the person is (name, handle, the server you met
+  them in, their roles there, and a note you can add)
+- Member list grouped by hoisted role, split into online and offline, with
+  status dots, custom statuses and what everyone is playing
+- User card with badges, banner, presence, join and account dates, roles and
+  the permissions that matter
 
 **Bot tooling**
 - Slash command management: list, create, edit and delete global and
@@ -83,7 +112,8 @@ These come from the bot token, not from this client:
 
 Next.js (App Router, static export), TypeScript, Tailwind, Zustand. The REST
 and gateway clients are written for this project; the markdown parser and the
-emoji picker have no third-party dependencies.
+emoji picker have no third-party dependencies. The interface follows Discord's
+own dark theme — surfaces, spacing, status shapes and motion.
 
 ## License
 

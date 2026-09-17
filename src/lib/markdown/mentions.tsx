@@ -48,7 +48,7 @@ export function UserMention({ id }: { id: string }) {
 
   if (!name) return <RawMention text={`<@${id}>`} />;
   return (
-    <span className={`${PILL} bg-accent/15 text-accent hover:bg-accent/25`} title={id}>
+    <span className={`${PILL} bg-accent/30 text-[#c9cdfb] hover:bg-accent hover:text-white`} title={id}>
       @{name}
     </span>
   );
@@ -71,7 +71,7 @@ export function RoleMention({ id }: { id: string }) {
           : undefined
       }
     >
-      <span className={hex ? undefined : "text-accent"}>@{name}</span>
+      <span className={hex ? undefined : "text-[#c9cdfb]"}>@{name}</span>
     </span>
   );
 }
@@ -99,7 +99,7 @@ export function ChannelMention({ id }: { id: string }) {
   return (
     <button
       type="button"
-      className={`${PILL} bg-accent/15 text-accent hover:bg-accent/25`}
+      className={`${PILL} bg-accent/30 text-[#c9cdfb] hover:bg-accent hover:text-white`}
       title={id}
       onClick={() => {
         if (known) void select(id);
@@ -112,7 +112,7 @@ export function ChannelMention({ id }: { id: string }) {
 
 export function CommandMention({ name, id }: { name: string; id: string }) {
   return (
-    <span className={`${PILL} bg-accent/15 text-accent`} title={id}>
+    <span className={`${PILL} bg-accent/30 text-[#c9cdfb]`} title={id}>
       /{name}
     </span>
   );

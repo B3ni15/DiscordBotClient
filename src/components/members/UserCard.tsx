@@ -1,16 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { APIUser } from "discord-api-types/v10";
+import { PermissionFlagsBits } from "discord-api-types/v10";
+import { Spinner } from "@/components/ui/Spinner";
+import { StatusDot, STATUS_LABEL } from "@/components/ui/StatusDot";
 import { api } from "@/lib/discord/api";
-import { userAvatarUrl } from "@/lib/discord/cdn";
+import { memberAvatarUrl, userAvatarUrl, userBannerUrl } from "@/lib/discord/cdn";
+import {
+  activityLabel,
+  customStatus,
+  detailedActivities,
+  deviceLabel,
+} from "@/lib/discord/presence";
 import {
   displayName,
   memberColorHex,
+  memberPermissions,
   memberRoles,
   roleColorHex,
   snowflakeTimestamp,
 } from "@/lib/discord/roles";
-import { useClient } from "@/lib/store/client";
+import { accentColorHex, userBadges } from "@/lib/discord/userFlags";
+import { OFFLINE_PRESENCE, useClient } from "@/lib/store/client";
 
 export interface UserCardProps {
   guildId: string;
@@ -34,20 +46,95 @@ function formatDate(value: number | string | null | undefined): string {
   return new Intl.DateTimeFormat("en-US", DATE_FORMAT).format(date);
 }
 
-/** Details of a single guild member: identity, dates, roles and a DM shortcut. */
+/** Permissions worth calling out on a profile, highest impact first. */
+const NOTABLE_PERMISSIONS: Array<[bigint, string]> = [
+  [PermissionFlagsBits.Administrator, "Administrator"],
+  [PermissionFlagsBits.ManageGuild, "Manage Server"],
+  [PermissionFlagsBits.ManageRoles, "Manage Roles"],
+  [PermissionFlagsBits.ManageChannels, "Manage Channels"],
+  [PermissionFlagsBits.BanMembers, "Ban Members"],
+  [PermissionFlagsBits.KickMembers, "Kick Members"],
+  [PermissionFlagsBits.ModerateMembers, "Timeout Members"],
+  [PermissionFlagsBits.ManageMessages, "Manage Messages"],
+  [PermissionFlagsBits.MentionEveryone, "Mention Everyone"],
+];
+
+/**
+ * Profile of a single guild member: identity and badges, presence and what they
+ * are doing, the dates, their roles and standing in the server, and a shortcut
+ * that opens the DM and files it under Direct Messages.
+ */
 export function UserCard({ guildId, userId, onClose, className }: UserCardProps) {
   const member = useClient((state) => state.membersByGuild[guildId]?.[userId]);
   const guild = useClient((state) => state.guilds[guildId]);
+  const presence = useClient(
+    (state) => state.presenceByGuild[guildId]?.[userId] ?? OFFLINE_PRESENCE,
+  );
+  const hasPresence = useClient((state) => state.presenceEnabled);
   const getRest = useClient((state) => state.getRest);
-  const selectChannel = useClient((state) => state.selectChannel);
+  const openDM = useClient((state) => state.openDM);
 
   const [copied, setCopied] = useState(false);
   const [dmBusy, setDmBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The account as Discord knows it; carries the banner and badges a member
+   * object lacks. Kept with the id it was fetched for, so a card switched to
+   * another member never shows the previous one's profile.
+   */
+  const [fetched, setFetched] = useState<{ id: string; user: APIUser } | null>(null);
+  /** Evaluated once per mount: only used to tell an active timeout from a past one. */
+  const [mountedAt] = useState(() => Date.now());
 
   const user = member?.user;
   const roles = member ? memberRoles(member, guild?.roles ?? []) : [];
   const nameColor = member ? memberColorHex(member, guild?.roles ?? []) : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .user(getRest(), userId)
+      .then((user) => {
+        if (!cancelled) setFetched({ id: userId, user });
+      })
+      .catch(() => {
+        // The profile stays on what the member object already carries.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, getRest]);
+
+  const account = fetched?.id === userId ? fetched.user : null;
+
+  const banner = account ? userBannerUrl(account) : null;
+  const accent = accentColorHex(account?.accent_color) ?? nameColor;
+  const badges = userBadges(account?.public_flags);
+  const avatar =
+    memberAvatarUrl(guildId, userId, member?.avatar, 128) ??
+    (user ? userAvatarUrl(user, 128) : undefined);
+
+  const status = customStatus(presence);
+  const activities = detailedActivities(presence);
+  const devices = deviceLabel(presence);
+
+  const permissions =
+    guild && member ? memberPermissions(guild, member) : null;
+  const isAdmin =
+    permissions !== null &&
+    (permissions & PermissionFlagsBits.Administrator) === PermissionFlagsBits.Administrator;
+  // Administrator already grants everything, so listing the rest says nothing.
+  const notable =
+    permissions === null
+      ? []
+      : isAdmin
+        ? ["Administrator"]
+        : NOTABLE_PERMISSIONS.filter(([bit]) => (permissions & bit) === bit).map(
+            ([, label]) => label,
+          );
+  const isOwner = guild?.owner_id === userId;
+  const timeoutUntil = member?.communication_disabled_until;
+  const timedOut = timeoutUntil ? Date.parse(timeoutUntil) > mountedAt : false;
 
   async function copyId() {
     setError(null);
@@ -60,12 +147,23 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
     }
   }
 
-  async function openDM() {
+  async function handleOpenDM() {
     setDmBusy(true);
     setError(null);
     try {
-      const channel = await api.createDM(getRest(), userId);
-      await selectChannel(channel.id);
+      // Everything known here is stored with the DM: the bot may lose sight of
+      // this person the moment it no longer shares a server with them.
+      await openDM(userId, {
+        username: user?.username,
+        globalName: user?.global_name ?? null,
+        discriminator: user?.discriminator ?? null,
+        avatar: user?.avatar ?? null,
+        bot: user?.bot,
+        nick: member?.nick ?? null,
+        guildId,
+        guildName: guild?.name ?? null,
+        roles: roles.map((role) => role.name),
+      });
       onClose();
     } catch (cause) {
       setError(
@@ -80,119 +178,223 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
     <div
       role="dialog"
       aria-label="Member details"
-      className={`flex w-72 flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-xl ${className ?? ""}`}
+      className={`flex w-80 flex-col overflow-hidden rounded-lg bg-panel-alt shadow-2xl ${className ?? ""}`}
     >
-      <header className="flex items-start gap-3 border-b border-line px-4 py-3">
-        {user ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={userAvatarUrl(user, 128)}
-            alt=""
-            className="h-12 w-12 shrink-0 rounded-full bg-raised"
-          />
-        ) : (
-          <div className="h-12 w-12 shrink-0 rounded-full bg-raised" />
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2">
-            <span
-              className="truncate text-sm font-semibold"
-              style={nameColor ? { color: nameColor } : undefined}
-            >
-              {member ? displayName(member) : "Unknown member"}
-            </span>
-            {user?.bot && (
-              <span className="shrink-0 rounded bg-accent/15 px-1 font-mono text-[10px] text-accent">
-                BOT
-              </span>
-            )}
-          </p>
-          {user && <p className="truncate text-xs text-muted">@{user.username}</p>}
-        </div>
+      <div
+        className="relative h-[60px] shrink-0 bg-cover bg-center"
+        style={{
+          backgroundColor: accent ?? "var(--accent)",
+          backgroundImage: banner ? `url(${banner})` : undefined,
+        }}
+      >
         <button
           type="button"
           onClick={onClose}
           aria-label="Close card"
-          className="shrink-0 text-muted hover:text-text"
+          className="absolute top-2 right-2 grid h-6 w-6 place-items-center rounded-full bg-black/40 text-sm text-white transition-colors hover:bg-black/70"
         >
-          ✕
+          <span aria-hidden>✕</span>
         </button>
-      </header>
-
-      <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 py-3">
-        <section>
-          <h3 className="pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">
-            User ID
-          </h3>
-          <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-text">{userId}</span>
-            <button
-              type="button"
-              onClick={() => void copyId()}
-              className="shrink-0 rounded bg-raised px-2 py-1 text-[11px] text-muted transition-colors hover:text-accent"
-            >
-              {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
-        </section>
-
-        <section className="grid grid-cols-2 gap-3">
-          <div>
-            <h3 className="pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">
-              Joined server
-            </h3>
-            <p className="text-xs text-text">{formatDate(member?.joined_at)}</p>
-          </div>
-          <div>
-            <h3 className="pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">
-              Account created
-            </h3>
-            <p className="text-xs text-text">{formatDate(snowflakeTimestamp(userId))}</p>
-          </div>
-        </section>
-
-        <section>
-          <h3 className="pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">
-            Roles — <span className="font-mono">{roles.length}</span>
-          </h3>
-          {roles.length === 0 ? (
-            <p className="text-xs text-muted">This member has no roles.</p>
-          ) : (
-            <ul className="flex flex-wrap gap-1.5">
-              {roles.map((role) => {
-                const color = roleColorHex(role.color);
-                return (
-                  <li
-                    key={role.id}
-                    className="flex items-center gap-1.5 rounded-full border border-line bg-raised px-2 py-0.5 text-[11px] text-text"
-                    style={color ? { borderColor: color } : undefined}
-                  >
-                    <span
-                      aria-hidden
-                      className="h-2 w-2 rounded-full bg-muted"
-                      style={color ? { backgroundColor: color } : undefined}
-                    />
-                    <span className="max-w-32 truncate">{role.name}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        {error && <p className="text-xs leading-relaxed text-danger">{error}</p>}
       </div>
 
-      <footer className="border-t border-line px-4 py-3">
+      <div className="relative -mt-8 px-4">
+        <span className="relative inline-block">
+          {avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatar}
+              alt=""
+              className="h-20 w-20 rounded-full border-[6px] border-panel-alt bg-panel-alt"
+            />
+          ) : (
+            <span className="block h-20 w-20 rounded-full border-[6px] border-panel-alt bg-raised" />
+          )}
+          {hasPresence && (
+            <StatusDot
+              status={presence.status}
+              size={14}
+              ringClassName="bg-panel-alt"
+              className="absolute right-0.5 bottom-0.5"
+              label={STATUS_LABEL[presence.status] ?? "Offline"}
+            />
+          )}
+        </span>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-2">
+        <div className="rounded-lg bg-ink p-3">
+          <p className="flex flex-wrap items-center gap-2">
+            <span
+              className="text-xl leading-tight font-bold break-words text-bright"
+              style={nameColor ? { color: nameColor } : undefined}
+            >
+              {member ? displayName(member) : (account?.global_name ?? "Unknown member")}
+            </span>
+            {user?.bot && (
+              <span className="rounded bg-accent px-1 py-px text-[10px] leading-none font-medium text-white">
+                {badges.some((badge) => badge.label === "Verified Bot") ? "✓ BOT" : "BOT"}
+              </span>
+            )}
+          </p>
+          <p className="text-sm text-text">
+            @{user?.username ?? account?.username ?? userId}
+            {user?.discriminator && user.discriminator !== "0" && (
+              <span className="text-muted">#{user.discriminator}</span>
+            )}
+          </p>
+
+          {badges.length > 0 && (
+            <ul className="mt-2 flex flex-wrap gap-1">
+              {badges.map((badge) => (
+                <li
+                  key={badge.label}
+                  title={badge.label}
+                  className="grid h-6 w-6 place-items-center rounded bg-panel text-sm"
+                >
+                  <span aria-hidden>{badge.glyph}</span>
+                  <span className="sr-only">{badge.label}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {status && (
+            <p className="mt-2 border-t border-line pt-2 text-sm break-words text-text">{status}</p>
+          )}
+
+          {hasPresence && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
+              <StatusDot status={presence.status} size={8} ringClassName="bg-transparent" />
+              {STATUS_LABEL[presence.status] ?? "Offline"}
+              {devices && <span className="text-faint">· {devices}</span>}
+            </p>
+          )}
+
+          {activities.length > 0 && (
+            <Section title="Activity">
+              <ul className="flex flex-col gap-1">
+                {activities.map((activity, index) => (
+                  <li key={`${activity.name}-${index}`} className="text-xs text-text">
+                    <span className="font-semibold">{activityLabel(activity)}</span>
+                    {activity.details && (
+                      <span className="block text-muted">{activity.details}</span>
+                    )}
+                    {activity.state && activity.state !== activity.details && (
+                      <span className="block text-muted">{activity.state}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          <Section title="Member since">
+            <div className="grid grid-cols-2 gap-3">
+              <p className="text-xs text-text">
+                <span className="block text-[10px] text-muted">{guild?.name ?? "This server"}</span>
+                {formatDate(member?.joined_at)}
+              </p>
+              <p className="text-xs text-text">
+                <span className="block text-[10px] text-muted">Discord</span>
+                {formatDate(snowflakeTimestamp(userId))}
+              </p>
+            </div>
+          </Section>
+
+          {member?.premium_since && (
+            <Section title="Boosting since">
+              <p className="text-xs text-amber">{formatDate(member.premium_since)}</p>
+            </Section>
+          )}
+
+          {timedOut && (
+            <Section title="Timed out until">
+              <p className="text-xs text-danger">{formatDate(timeoutUntil)}</p>
+            </Section>
+          )}
+
+          <Section title={`Roles — ${roles.length}`}>
+            {roles.length === 0 ? (
+              <p className="text-xs text-muted">This member has no roles.</p>
+            ) : (
+              <ul className="flex flex-wrap gap-1.5">
+                {roles.map((role) => {
+                  const color = roleColorHex(role.color);
+                  return (
+                    <li
+                      key={role.id}
+                      className="flex items-center gap-1.5 rounded bg-panel px-2 py-0.5 text-[11px] text-text"
+                    >
+                      <span
+                        aria-hidden
+                        className="h-2.5 w-2.5 rounded-full bg-muted"
+                        style={color ? { backgroundColor: color } : undefined}
+                      />
+                      <span className="max-w-32 truncate">{role.name}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Section>
+
+          {(isOwner || notable.length > 0) && (
+            <Section title="Standing">
+              <ul className="flex flex-wrap gap-1.5">
+                {isOwner && (
+                  <li className="rounded bg-amber/15 px-2 py-0.5 text-[11px] text-amber">
+                    Server owner
+                  </li>
+                )}
+                {notable.map((label) => (
+                  <li
+                    key={label}
+                    className="rounded bg-panel px-2 py-0.5 text-[11px] text-muted"
+                  >
+                    {label}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          <Section title="User ID">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-text">{userId}</span>
+              <button
+                type="button"
+                onClick={() => void copyId()}
+                className="shrink-0 rounded bg-panel px-2 py-1 text-[11px] text-muted transition-colors hover:bg-raised hover:text-bright"
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </Section>
+
+          {error && <p className="mt-3 text-xs leading-relaxed text-danger">{error}</p>}
+        </div>
+      </div>
+
+      <footer className="shrink-0 px-4 pt-1 pb-4">
         <button
           type="button"
-          onClick={() => void openDM()}
+          onClick={() => void handleOpenDM()}
           disabled={dmBusy}
-          className="w-full rounded bg-accent/15 px-3 py-1.5 text-sm text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong disabled:opacity-60"
         >
-          {dmBusy ? "Opening…" : "Open DM"}
+          {dmBusy && <Spinner size={14} />}
+          {dmBusy ? "Opening…" : "Send a direct message"}
         </button>
       </footer>
     </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-3 border-t border-line pt-2">
+      <h3 className="pb-1 text-[11px] font-bold tracking-wide text-muted uppercase">{title}</h3>
+      {children}
+    </section>
   );
 }

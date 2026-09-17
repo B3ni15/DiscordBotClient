@@ -1,29 +1,61 @@
 @import "tailwindcss";
 
+/*
+ * Discord's dark theme surfaces, from the darkest (the server rail) to the
+ * lightest (the message area), plus the accent and status colours the client
+ * uses everywhere.
+ */
 :root {
-  --ink: #0d0f13;
-  --panel: #151920;
-  --raised: #1c222b;
-  --line: #262d38;
-  --text: #e2e6ee;
-  --muted: #8b94a5;
-  --accent: #5b8def;
-  --amber: #d9a441;
-  --danger: #e06c75;
+  --ink: #1e1f22;
+  --floating: #111214;
+  --panel: #2b2d31;
+  --panel-alt: #232428;
+  --chat: #313338;
+  --raised: #383a40;
+  --hover: #35373c;
+  --line: #3f4147;
+  --text: #dbdee1;
+  --bright: #f2f3f5;
+  --muted: #949ba4;
+  --faint: #80848e;
+  --accent: #5865f2;
+  --accent-strong: #4752c4;
+  --online: #23a55a;
+  --amber: #f0b232;
+  --danger: #f23f43;
+  --link: #00a8fc;
+  --mention: rgb(88 101 242 / 0.3);
 }
 
 @theme inline {
   --color-ink: var(--ink);
+  --color-floating: var(--floating);
   --color-panel: var(--panel);
+  --color-panel-alt: var(--panel-alt);
+  --color-chat: var(--chat);
   --color-raised: var(--raised);
+  --color-hover: var(--hover);
   --color-line: var(--line);
   --color-text: var(--text);
+  --color-bright: var(--bright);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-online: var(--online);
   --color-amber: var(--amber);
   --color-danger: var(--danger);
-  --font-sans: var(--font-plex-sans);
-  --font-mono: var(--font-plex-mono);
+  --color-link: var(--link);
+
+  --font-sans: var(--font-app-sans);
+  --font-mono: var(--font-app-mono);
+
+  --animate-fade-in: fade-in 0.15s ease-out;
+  --animate-message-in: message-in 0.2s ease-out;
+  --animate-pop-in: pop-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  --animate-panel-in: panel-in 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
+  --animate-sidebar-in: sidebar-in 0.2s cubic-bezier(0.2, 0.8, 0.3, 1);
+  --animate-spin-slow: spin 0.8s linear infinite;
 }
 
 html,
@@ -32,10 +64,13 @@ body {
 }
 
 body {
-  background: var(--ink);
+  background: var(--chat);
   color: var(--text);
-  font-family: var(--font-plex-sans), system-ui, sans-serif;
+  font-family: var(--font-app-sans), "Helvetica Neue", Helvetica, Arial, sans-serif;
   overscroll-behavior: none;
+  /* Discord's own font stack renders slightly tighter than the browser default. */
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
 }
 
 :focus-visible {
@@ -43,16 +78,135 @@ body {
   outline-offset: 2px;
 }
 
+/* Discord's scrollbars: invisible until the surface is hovered. */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--line);
+  background: transparent;
   border-radius: 999px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb {
+  background: var(--ink);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--floating);
+}
+
+/* The chat scroller keeps its bar visible, like Discord's. */
+.scroll-always::-webkit-scrollbar-thumb {
+  background: var(--ink);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sidebar-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Skeleton placeholders sweep a highlight across while data loads. */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--raised) 25%,
+    color-mix(in srgb, var(--raised) 60%, var(--muted)) 37%,
+    var(--raised) 63%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* The three dots of the typing indicator, each a beat behind the last. */
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+
+/* The pill left of a server icon: grows from nothing to its full height. */
+.rail-pill {
+  transition:
+    height 0.2s ease-out,
+    opacity 0.2s ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -60,6 +214,7 @@ body {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }

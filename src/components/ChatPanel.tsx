@@ -7,37 +7,54 @@ import { MessageToolbar } from "@/components/actions/MessageToolbar";
 import { ReactionBar } from "@/components/actions/ReactionBar";
 import { MessageContent } from "@/components/message/MessageContent";
 import { ThreadCreate } from "@/components/nav/ThreadCreate";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { Spinner } from "@/components/ui/Spinner";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
 import { Composer } from "./Composer";
 import { TypingIndicator } from "./TypingIndicator";
 
+const DM_TYPES = new Set([1, 3]);
+
 export function ChatPanel() {
   const channelId = useClient((state) => state.selectedChannelId);
 
-  if (!channelId) {
-    return (
-      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted">
-        Pick a channel from the list to start reading.
-      </div>
-    );
-  }
+  if (!channelId) return <EmptyChat />;
 
   // Keyed by channel so scroll, reply and edit state reset on their own.
   return <ChannelView key={channelId} channelId={channelId} />;
+}
+
+/** Discord's "no channel open" state, rather than a bare line of text. */
+function EmptyChat() {
+  return (
+    <div className="flex flex-1 animate-fade-in flex-col items-center justify-center gap-3 bg-chat px-6 text-center">
+      <span aria-hidden className="text-5xl opacity-40">
+        💬
+      </span>
+      <h2 className="text-lg font-semibold text-bright">No channel open</h2>
+      <p className="max-w-sm text-sm text-muted">
+        Pick a channel from the list to start reading, or open a direct message from the rail on
+        the left.
+      </p>
+    </div>
+  );
 }
 
 function ChannelView({ channelId }: { channelId: string }) {
   const channel = useClient((state) => state.channelsById[channelId]);
   const messages = useClient((state) => state.messagesByChannel[channelId]);
   const loadOlder = useClient((state) => state.loadOlderMessages);
+  const hasMore = useClient((state) => state.hasMoreByChannel[channelId]);
   const selfId = useClient((state) => state.user?.id);
   const scroller = useRef<HTMLDivElement>(null);
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<APIMessage | null>(null);
   const [creatingThread, setCreatingThread] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const selectChannel = useClient((state) => state.selectChannel);
 
   // Keep the newest message in view unless the reader scrolled up.
@@ -51,41 +68,65 @@ function ChannelView({ channelId }: { channelId: string }) {
     const element = scroller.current;
     if (!element) return;
     setPinnedToBottom(element.scrollHeight - element.scrollTop - element.clientHeight < 80);
-    if (element.scrollTop < 200) {
+    if (element.scrollTop < 200 && !loadingOlder && hasMore !== false) {
       const previousHeight = element.scrollHeight;
-      void loadOlder(channelId).then(() => {
-        // Hold the reading position while older messages are prepended.
-        element.scrollTop += element.scrollHeight - previousHeight;
-      });
+      setLoadingOlder(true);
+      void loadOlder(channelId)
+        .then(() => {
+          // Hold the reading position while older messages are prepended.
+          element.scrollTop += element.scrollHeight - previousHeight;
+        })
+        .finally(() => setLoadingOlder(false));
     }
   }
 
-  const channelName = channel && "name" in channel ? channel.name : channelId;
+  const isDM = channel !== undefined && DM_TYPES.has(channel.type);
+  const recipient = isDM
+    ? (channel as { recipients?: Array<{ username?: string; global_name?: string | null }> })
+        .recipients?.[0]
+    : undefined;
+  const channelName = isDM
+    ? (recipient?.global_name ?? recipient?.username ?? "Direct message")
+    : channel && "name" in channel
+      ? channel.name
+      : channelId;
+  const topic = channel && "topic" in channel ? channel.topic : null;
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-ink">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
-        <span aria-hidden className="text-muted">
-          #
+    <section className="flex min-w-0 flex-1 flex-col bg-chat">
+      <header className="z-10 flex h-12 shrink-0 items-center gap-2 px-4 shadow-[0_1px_0_rgba(0,0,0,0.2),0_2px_0_rgba(0,0,0,0.05)]">
+        <span aria-hidden className="text-xl leading-none text-faint">
+          {isDM ? "@" : "#"}
         </span>
-        <h2 className="truncate text-sm font-semibold">{channelName}</h2>
-        <div className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setCreatingThread(true)}
-            title="New thread"
-            aria-label="New thread"
-            className="grid h-8 w-8 place-items-center rounded text-base text-muted transition-colors hover:bg-raised hover:text-text"
-          >
-            ⌥
-          </button>
-          <HeaderButton panel="pins" label="Pinned messages" glyph="⚑" />
-          <HeaderButton panel="search" label="Search" glyph="⌕" />
+        <h2 className="truncate text-base font-semibold text-bright">{channelName}</h2>
+        {topic && (
+          <>
+            <span aria-hidden className="h-6 w-px shrink-0 bg-line" />
+            <p className="hidden min-w-0 truncate text-sm text-muted xl:block" title={topic}>
+              {topic}
+            </p>
+          </>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {!isDM && (
+            <Tooltip label="New thread">
+              <button
+                type="button"
+                onClick={() => setCreatingThread(true)}
+                aria-label="New thread"
+                className="grid h-8 w-8 place-items-center rounded text-base text-muted transition-colors hover:bg-hover hover:text-bright"
+              >
+                <span aria-hidden>🧵</span>
+              </button>
+            </Tooltip>
+          )}
+          <HeaderButton panel="pins" label="Pinned messages" glyph="📌" />
+          <HeaderButton panel="search" label="Search" glyph="🔍" />
         </div>
       </header>
 
       {creatingThread && (
-        <div className="border-b border-line bg-panel px-4 py-3">
+        <div className="animate-fade-in border-b border-line bg-panel px-4 py-3">
           <ThreadCreate
             channelId={channelId}
             onCreated={(threadId) => void selectChannel(threadId)}
@@ -94,26 +135,41 @@ function ChannelView({ channelId }: { channelId: string }) {
         </div>
       )}
 
-      <div ref={scroller} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4">
+      <div
+        ref={scroller}
+        onScroll={handleScroll}
+        className="scroll-always min-h-0 flex-1 overflow-y-auto px-4 py-4"
+      >
         {messages === undefined ? (
-          <p className="text-sm text-muted">Loading messages…</p>
+          <MessageSkeletons />
         ) : messages.length === 0 ? (
-          <p className="text-sm text-muted">No messages in this channel yet.</p>
+          <ChannelIntro name={channelName ?? channelId} isDM={isDM} />
         ) : (
-          <ol>
-            {messages.map((message, index) => (
-              <MessageRow
-                key={message.id}
-                message={message}
-                previous={messages[index - 1]}
-                isOwn={message.author.id === selfId}
-                editing={editingId === message.id}
-                onReply={setReplyTo}
-                onEdit={(target) => setEditingId(target.id)}
-                onEditDone={() => setEditingId(null)}
-              />
-            ))}
-          </ol>
+          <>
+            {loadingOlder && (
+              <p className="flex items-center justify-center gap-2 py-3 text-xs text-muted">
+                <Spinner size={14} />
+                Loading older messages…
+              </p>
+            )}
+            {hasMore === false && !loadingOlder && (
+              <ChannelIntro name={channelName ?? channelId} isDM={isDM} compact />
+            )}
+            <ol>
+              {messages.map((message, index) => (
+                <MessageRow
+                  key={message.id}
+                  message={message}
+                  previous={messages[index - 1]}
+                  isOwn={message.author.id === selfId}
+                  editing={editingId === message.id}
+                  onReply={setReplyTo}
+                  onEdit={(target) => setEditingId(target.id)}
+                  onEditDone={() => setEditingId(null)}
+                />
+              ))}
+            </ol>
+          </>
         )}
       </div>
 
@@ -121,10 +177,65 @@ function ChannelView({ channelId }: { channelId: string }) {
       <Composer
         channelId={channelId}
         channelName={channelName ?? ""}
+        isDM={isDM}
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
       />
     </section>
+  );
+}
+
+/** The "this is the beginning of #channel" block Discord puts above the history. */
+function ChannelIntro({
+  name,
+  isDM,
+  compact = false,
+}: {
+  name: string;
+  isDM: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`animate-fade-in ${compact ? "pt-2 pb-6" : "flex h-full flex-col justify-end pb-6"}`}>
+      <div className="grid h-16 w-16 place-items-center rounded-full bg-raised text-3xl">
+        <span aria-hidden>{isDM ? "@" : "#"}</span>
+      </div>
+      <h3 className="mt-4 text-2xl font-bold text-bright">
+        {isDM ? name : `Welcome to #${name}`}
+      </h3>
+      <p className="mt-1 text-sm text-muted">
+        {isDM
+          ? `This is the start of your direct message history with ${name}.`
+          : `This is the beginning of the #${name} channel.`}
+      </p>
+    </div>
+  );
+}
+
+/** Placeholder history, shaped like real messages, while the first page loads. */
+function MessageSkeletons() {
+  const lines = [
+    ["62%", "38%"],
+    ["44%"],
+    ["70%", "52%", "30%"],
+    ["36%"],
+    ["58%", "42%"],
+  ];
+
+  return (
+    <div aria-hidden className="flex flex-col gap-6 py-2">
+      {lines.map((widths, index) => (
+        <div key={index} className="flex gap-4">
+          <Skeleton width={40} height={40} rounded="full" />
+          <div className="flex min-w-0 flex-1 flex-col gap-2 pt-1">
+            <Skeleton height={12} width="18%" rounded="sm" />
+            {widths.map((width, line) => (
+              <Skeleton key={line} height={10} width={width} rounded="sm" />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -141,18 +252,19 @@ function HeaderButton({
   const active = useUI((state) => state.panel === panel);
 
   return (
-    <button
-      type="button"
-      onClick={() => togglePanel(panel)}
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      className={`grid h-8 w-8 place-items-center rounded text-base transition-colors ${
-        active ? "bg-raised text-accent" : "text-muted hover:bg-raised hover:text-text"
-      }`}
-    >
-      {glyph}
-    </button>
+    <Tooltip label={label}>
+      <button
+        type="button"
+        onClick={() => togglePanel(panel)}
+        aria-label={label}
+        aria-pressed={active}
+        className={`grid h-8 w-8 place-items-center rounded text-base transition-colors ${
+          active ? "bg-hover text-bright" : "text-muted hover:bg-hover hover:text-bright"
+        }`}
+      >
+        <span aria-hidden>{glyph}</span>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -165,6 +277,8 @@ interface MessageRowProps {
   onEdit: (message: APIMessage) => void;
   onEditDone: () => void;
 }
+
+const TIME_FORMAT: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
 
 /** Consecutive messages from one author within 7 minutes render as one block. */
 function MessageRow({
@@ -181,6 +295,11 @@ function MessageRow({
     previous.author.id === message.author.id &&
     Date.parse(message.timestamp) - Date.parse(previous.timestamp) < 7 * 60 * 1000;
 
+  const sentAt = new Date(message.timestamp);
+  const newDay =
+    previous !== undefined &&
+    new Date(previous.timestamp).toDateString() !== sentAt.toDateString();
+
   // The gateway attaches a partial member object that APIMessage does not declare.
   const nick = (message as APIMessage & { member?: { nick?: string | null } }).member?.nick;
   const displayName = nick ?? message.author.global_name ?? message.author.username;
@@ -195,51 +314,75 @@ function MessageRow({
   );
 
   return (
-    <li
-      data-message-id={message.id}
-      className={`group relative rounded px-2 hover:bg-panel/60 ${grouped ? "py-0.5" : "mt-4 py-1"}`}
-    >
-      <MessageToolbar
-        message={message}
-        isOwn={isOwn}
-        onReply={onReply}
-        onEdit={onEdit}
-        className="absolute top-0 right-2 z-10 -translate-y-1/2"
-      />
-
-      {grouped ? (
-        <div className="pl-12">{body}</div>
-      ) : (
-        <div className="flex gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={userAvatarUrl(message.author, 80)}
-            alt=""
-            className="mt-0.5 h-9 w-9 shrink-0 rounded-full"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm font-semibold">{displayName}</span>
-              {message.author.bot && (
-                <span className="rounded bg-accent/15 px-1 font-mono text-[10px] font-medium text-accent">
-                  BOT
-                </span>
-              )}
-              <time
-                dateTime={message.timestamp}
-                className="font-mono text-[11px] text-muted"
-                title={new Date(message.timestamp).toLocaleString("en-US")}
-              >
-                {new Date(message.timestamp).toLocaleTimeString("en-US", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </time>
-            </div>
-            {body}
-          </div>
-        </div>
+    <>
+      {newDay && (
+        <li className="relative my-4 flex items-center" aria-hidden>
+          <span className="h-px flex-1 bg-line" />
+          <span className="px-2 text-[11px] font-semibold text-muted">
+            {sentAt.toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
+          </span>
+          <span className="h-px flex-1 bg-line" />
+        </li>
       )}
-    </li>
+      <li
+        data-message-id={message.id}
+        className={`group relative animate-message-in px-2 transition-colors hover:bg-[rgb(0_0_0/0.06)] ${
+          grouped ? "py-0.5" : "mt-4 py-1"
+        }`}
+      >
+        <MessageToolbar
+          message={message}
+          isOwn={isOwn}
+          onReply={onReply}
+          onEdit={onEdit}
+        />
+
+        {grouped ? (
+          <div className="flex gap-3">
+            {/* The timestamp of a grouped message only appears on hover, as in Discord. */}
+            <time
+              dateTime={message.timestamp}
+              className="w-9 shrink-0 pt-1 text-right font-mono text-[10px] text-faint opacity-0 transition-opacity group-hover:opacity-100"
+            >
+              {sentAt.toLocaleTimeString("en-US", TIME_FORMAT)}
+            </time>
+            <div className="min-w-0 flex-1">{body}</div>
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={userAvatarUrl(message.author, 80)}
+              alt=""
+              className="mt-0.5 h-10 w-10 shrink-0 rounded-full"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[15px] leading-tight font-medium text-bright">
+                  {displayName}
+                </span>
+                {message.author.bot && (
+                  <span className="rounded bg-accent px-1 py-px text-[10px] leading-none font-medium text-white">
+                    BOT
+                  </span>
+                )}
+                <time
+                  dateTime={message.timestamp}
+                  className="text-[11px] text-faint"
+                  title={sentAt.toLocaleString("en-US")}
+                >
+                  {sentAt.toLocaleTimeString("en-US", TIME_FORMAT)}
+                </time>
+              </div>
+              {body}
+            </div>
+          </div>
+        )}
+      </li>
+    </>
   );
 }

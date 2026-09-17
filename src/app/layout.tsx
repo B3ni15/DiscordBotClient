@@ -1,29 +1,31 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
-const plexSans = IBM_Plex_Sans({
-  variable: "--font-plex-sans",
+/** Discord ships "gg sans"; Inter is the closest freely available match. */
+const appSans = Inter({
+  variable: "--font-app-sans",
   subsets: ["latin", "latin-ext"],
   weight: ["400", "500", "600", "700"],
 });
 
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
+const appMono = JetBrains_Mono({
+  variable: "--font-app-mono",
   subsets: ["latin", "latin-ext"],
   weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
   title: "disbotclient",
-  description: "A Discord bot client that runs entirely in your browser. Your token never leaves your machine.",
+  description:
+    "A Discord bot client that runs entirely in your browser. Your token never leaves your machine.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${plexSans.variable} ${plexMono.variable} antialiased`}>
+      <body className={`${appSans.variable} ${appMono.variable} antialiased`}>
         {children}
         <Analytics />
       </body>

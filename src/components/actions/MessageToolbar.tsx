@@ -19,6 +19,7 @@ export interface MessageToolbarProps {
   onEdit: (message: APIMessage) => void;
   /** Called after the message was deleted on Discord's side. */
   onDeleted?: (message: APIMessage) => void;
+  /** Extra classes; the toolbar positions itself against the message row. */
   className?: string;
 }
 
@@ -139,13 +140,15 @@ export function MessageToolbar({
   }
 
   return (
-    <div className={`relative ${className}`}>
+    <div
+      className={`absolute top-0 right-2 z-10 w-fit -translate-y-1/2 ${className}`}
+    >
       <div
         ref={toolbar}
         role="toolbar"
         aria-label="Message actions"
         onKeyDown={handleKeyDown}
-        className={`flex items-center gap-0.5 rounded-md border border-line bg-raised p-0.5 shadow-lg transition-opacity ${
+        className={`inline-flex items-center gap-0.5 rounded-md border border-line bg-panel p-0.5 shadow-lg transition-opacity ${
           pickerOpen || confirmOpen
             ? "opacity-100"
             : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"
@@ -164,7 +167,9 @@ export function MessageToolbar({
             onFocus={() => setFocusIndex(index)}
             onClick={action.onRun}
             className={`flex h-7 w-7 items-center justify-center rounded text-xs leading-none ${
-              action.danger ? "text-danger hover:bg-danger/15" : "text-muted hover:bg-panel hover:text-text"
+              action.danger
+                ? "text-danger hover:bg-danger/15"
+                : "text-muted hover:bg-hover hover:text-bright"
             }`}
           >
             <span aria-hidden>{action.icon}</span>
@@ -175,7 +180,7 @@ export function MessageToolbar({
       {notice && (
         <p
           role="status"
-          className="absolute top-full right-0 mt-1 rounded bg-raised px-2 py-1 text-[11px] whitespace-nowrap text-muted shadow"
+          className="absolute top-full right-0 mt-1 animate-pop-in rounded bg-floating px-2 py-1 text-[11px] whitespace-nowrap text-bright shadow-lg"
         >
           {notice}
         </p>

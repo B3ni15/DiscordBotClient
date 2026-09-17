@@ -26,9 +26,15 @@ export const GatewayIntent = {
 export const PRIVILEGED_INTENTS =
   GatewayIntent.GuildMembers | GatewayIntent.GuildPresences | GatewayIntent.MessageContent;
 
+/**
+ * Everything the client can make use of, presences included: without
+ * `GuildPresences` Discord sends neither the `presences` array in GUILD_CREATE
+ * nor any PRESENCE_UPDATE, so the member list can never show who is around.
+ */
 export const DEFAULT_INTENTS =
   GatewayIntent.Guilds |
   GatewayIntent.GuildMembers |
+  GatewayIntent.GuildPresences |
   GatewayIntent.GuildExpressions |
   GatewayIntent.GuildVoiceStates |
   GatewayIntent.GuildMessages |
@@ -41,3 +47,20 @@ export const DEFAULT_INTENTS =
 
 /** Intents left when the bot has no privileged intents enabled. */
 export const FALLBACK_INTENTS = DEFAULT_INTENTS & ~PRIVILEGED_INTENTS;
+
+/**
+ * Tried in order whenever Discord answers a connect with close code 4014
+ * ("disallowed intents"). Each step drops one more privileged intent, so a bot
+ * with only some of them enabled keeps the rest instead of falling all the way
+ * back to nothing.
+ */
+export const INTENT_LADDER: readonly number[] = [
+  DEFAULT_INTENTS,
+  DEFAULT_INTENTS & ~GatewayIntent.GuildPresences,
+  DEFAULT_INTENTS & ~(GatewayIntent.GuildPresences | GatewayIntent.GuildMembers),
+  FALLBACK_INTENTS,
+];
+
+export function hasIntent(intents: number, intent: number): boolean {
+  return (intents & intent) === intent;
+}

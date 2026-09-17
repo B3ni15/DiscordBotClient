@@ -11,6 +11,9 @@ import type { RestClient } from "./rest";
 export const api = {
   currentUser: (rest: RestClient) => rest.get<APIUser>("/users/@me"),
 
+  /** Full account of any user: banner, accent colour and badge flags included. */
+  user: (rest: RestClient, userId: string) => rest.get<APIUser>(`/users/${userId}`),
+
   currentUserGuilds: (rest: RestClient) =>
     rest.get<APIGuild[]>("/users/@me/guilds", { query: { limit: 200 } }),
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { Spinner } from "@/components/ui/Spinner";
 import { useClient } from "@/lib/store/client";
 
 const LABELS: Record<string, string> = {
@@ -20,11 +21,20 @@ export function StatusBar() {
   return (
     <div
       role="status"
-      className="flex shrink-0 items-center justify-between gap-3 border-t border-line bg-panel px-4 py-1.5 text-xs"
+      className={`flex shrink-0 animate-fade-in items-center justify-between gap-3 px-4 py-1.5 text-xs font-medium ${
+        error ? "bg-danger text-white" : "bg-amber text-black"
+      }`}
     >
-      <span className={error ? "text-danger" : "text-muted"}>{error ?? LABELS[status]}</span>
+      <span className="flex items-center gap-2">
+        {!error && status !== "closed" && <Spinner size={12} />}
+        {error ?? LABELS[status]}
+      </span>
       {(status === "closed" || error) && (
-        <button type="button" onClick={logout} className="text-accent hover:underline">
+        <button
+          type="button"
+          onClick={logout}
+          className="rounded bg-black/20 px-2 py-0.5 font-semibold transition-colors hover:bg-black/40"
+        >
           Sign out
         </button>
       )}

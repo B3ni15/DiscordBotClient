@@ -1,9 +1,4 @@
-import {
-  DEFAULT_INTENTS,
-  FALLBACK_INTENTS,
-  GATEWAY_URL,
-  GatewayIntent,
-} from "./constants";
+import { GATEWAY_URL, GatewayIntent, INTENT_LADDER, hasIntent } from "./constants";
 
 export const GatewayOpcode = {
   Dispatch: 0,
@@ -37,6 +32,8 @@ export type GatewayStatus =
 export interface GatewayEvents {
   status: (status: GatewayStatus) => void;
   dispatch: (event: string, data: unknown) => void;
+  /** The intents the gateway actually accepted; changes as the ladder is walked. */
+  intents: (intents: number) => void;
   /** Fatal: the socket will not reconnect on its own. */
   error: (error: Error) => void;
 }
@@ -54,8 +51,9 @@ const FATAL_CLOSE_CODES: Record<number, string> = {
  * Discord gateway client for the browser.
  *
  * Handles the hello/identify/heartbeat cycle, resumes after a dropped socket and
- * falls back to non-privileged intents when the bot has none enabled in the
- * Developer Portal (close code 4014), so a fresh bot still connects.
+ * walks `INTENT_LADDER` when Discord rejects the requested intents (close code
+ * 4014), dropping one privileged intent at a time so a bot that has only some of
+ * them enabled keeps the rest.
  */
 export class GatewayClient {
   #token: string;
@@ -66,17 +64,27 @@ export class GatewayClient {
   #sessionId: string | null = null;
   #resumeUrl: string | null = null;
   #ackPending = false;
-  #intents = DEFAULT_INTENTS;
-  #presenceFallbackAttempted = false;
+  #intentStep = 0;
   #reconnectAttempts = 0;
   #closedByUser = false;
   #listeners: { [K in keyof GatewayEvents]: Set<GatewayEvents[K]> } = {
     status: new Set(),
     dispatch: new Set(),
+    intents: new Set(),
     error: new Set(),
   };
 
   status: GatewayStatus = "idle";
+
+  /** The intents of the current attempt; only meaningful once the socket is ready. */
+  get intents(): number {
+    return INTENT_LADDER[this.#intentStep] ?? INTENT_LADDER[INTENT_LADDER.length - 1];
+  }
+
+  /** True while the connection carries the privileged presence intent. */
+  get presenceEnabled(): boolean {
+    return hasIntent(this.intents, GatewayIntent.GuildPresences);
+  }
 
   constructor(token: string) {
     this.#token = token;
@@ -166,6 +174,7 @@ export class GatewayClient {
           this.#sessionId = data.session_id;
           this.#resumeUrl = data.resume_gateway_url;
           this.#reconnectAttempts = 0;
+          this.#emit("intents", this.intents);
           this.#setStatus("ready");
         } else if (event === "RESUMED") {
           this.#reconnectAttempts = 0;
@@ -183,20 +192,13 @@ export class GatewayClient {
     if (this.#closedByUser) return;
 
     if (event.code === 4014) {
-      // Privileged intents are not enabled for this bot - retry without them.
-      if (!this.#presenceFallbackAttempted) {
-        // Keep presence when it is enabled even if another privileged intent is not.
-        this.#presenceFallbackAttempted = true;
-        this.#intents = FALLBACK_INTENTS | GatewayIntent.GuildPresences;
+      // A privileged intent is not enabled for this bot: step down the ladder,
+      // which drops one privileged intent at a time and keeps the others.
+      if (this.#intentStep < INTENT_LADDER.length - 1) {
+        this.#intentStep += 1;
         this.#sessionId = null;
         this.#lastSequence = null;
-        this.#scheduleReconnect(0);
-        return;
-      }
-      if (this.#intents !== FALLBACK_INTENTS) {
-        this.#intents = FALLBACK_INTENTS;
-        this.#sessionId = null;
-        this.#lastSequence = null;
+        this.#emit("intents", this.intents);
         this.#scheduleReconnect(0);
         return;
       }
@@ -237,7 +239,7 @@ export class GatewayClient {
       op: GatewayOpcode.Identify,
       d: {
         token: this.#token,
-        intents: this.#intents,
+        intents: this.intents,
         properties: { os: "browser", browser: "disbotclient", device: "disbotclient" },
       },
     });
