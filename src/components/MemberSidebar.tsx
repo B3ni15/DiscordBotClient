@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { APIGuildMember, APIRole } from "discord-api-types/v10";
 import { UserCard } from "@/components/members/UserCard";
+import { BotTag } from "@/components/ui/BotTag";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { userAvatarUrl } from "@/lib/discord/cdn";
@@ -194,11 +195,7 @@ export function MemberSidebar() {
                                 {displayName(member)}
                               </span>
                             </span>
-                            {user.bot && (
-                              <span className="shrink-0 rounded bg-accent px-1 py-px text-[10px] leading-none font-medium text-white">
-                                BOT
-                              </span>
-                            )}
+                            <BotTag user={user} />
                           </span>
                           {activity && (
                             <span className="block truncate text-xs text-muted">{activity}</span>

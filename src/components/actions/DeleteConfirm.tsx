@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { APIMessage } from "discord-api-types/v10";
 import { deleteMessage } from "@/lib/discord/messageActions";
 import { useClient } from "@/lib/store/client";
@@ -67,7 +68,14 @@ export function DeleteConfirm({ message, onClose, onDeleted }: DeleteConfirmProp
 
   const preview = message.content.trim();
 
-  return (
+  /*
+   * Rendered into the body rather than in place: the toolbar that opens this
+   * dialog is translated, and a transform makes an ancestor the containing
+   * block for `fixed`, which squeezed the dialog into the toolbar's own width.
+   */
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onMouseDown={(event) => {
@@ -80,32 +88,34 @@ export function DeleteConfirm({ message, onClose, onDeleted }: DeleteConfirmProp
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="delete-confirm-title"
-        className="w-full max-w-sm rounded-lg border border-line bg-raised p-4 shadow-xl"
+        className="w-full max-w-md animate-pop-in overflow-hidden rounded-md bg-panel shadow-2xl"
       >
-        <h2 id="delete-confirm-title" className="text-sm font-semibold">
-          Delete message
-        </h2>
-        <p className="mt-1 text-xs text-muted">
-          Delete this message? This cannot be undone.
-        </p>
-
-        <div className="mt-3 max-h-32 overflow-y-auto rounded border border-line bg-panel px-2 py-1.5 text-xs whitespace-pre-wrap">
-          {preview || <span className="text-muted">(no text content)</span>}
-        </div>
-        <p className="mt-2 font-mono text-[10px] text-muted">{message.id}</p>
-
-        {error && (
-          <p role="alert" className="mt-2 text-xs text-danger">
-            {error}
+        <div className="px-4 pt-4">
+          <h2 id="delete-confirm-title" className="text-xl font-bold text-bright">
+            Delete message
+          </h2>
+          <p className="mt-2 text-sm text-text">
+            Are you sure you want to delete this message? This cannot be undone.
           </p>
-        )}
 
-        <div className="mt-4 flex justify-end gap-2">
+          <div className="mt-4 max-h-40 overflow-y-auto rounded bg-chat px-3 py-2 text-sm break-words whitespace-pre-wrap">
+            {preview || <span className="text-muted">(no text content)</span>}
+          </div>
+          <p className="mt-2 font-mono text-[10px] text-faint">{message.id}</p>
+
+          {error && (
+            <p role="alert" className="mt-3 text-sm text-danger">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-4 flex items-center justify-end gap-3 bg-panel-alt px-4 py-4">
           <button
             ref={cancelButton}
             type="button"
             onClick={onClose}
-            className="rounded border border-line px-3 py-1.5 text-xs hover:bg-panel"
+            className="rounded px-4 py-2 text-sm whitespace-nowrap text-text transition-colors hover:underline"
           >
             Cancel
           </button>
@@ -113,12 +123,13 @@ export function DeleteConfirm({ message, onClose, onDeleted }: DeleteConfirmProp
             type="button"
             onClick={() => void confirm()}
             disabled={busy}
-            className="rounded bg-danger/20 px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger/30 disabled:opacity-60"
+            className="rounded bg-danger px-4 py-2 text-sm font-medium whitespace-nowrap text-white transition-colors hover:brightness-90 disabled:opacity-60"
           >
-            {busy ? "Deleting…" : "Delete message"}
+            {busy ? "Deleting…" : "Delete"}
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

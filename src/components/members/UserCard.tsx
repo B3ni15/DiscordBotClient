@@ -21,6 +21,7 @@ import {
   roleColorHex,
   snowflakeTimestamp,
 } from "@/lib/discord/roles";
+import { BotTag } from "@/components/ui/BotTag";
 import { accentColorHex, userBadges } from "@/lib/discord/userFlags";
 import { OFFLINE_PRESENCE, useClient } from "@/lib/store/client";
 
@@ -109,7 +110,10 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
 
   const banner = account ? userBannerUrl(account) : null;
   const accent = accentColorHex(account?.accent_color) ?? nameColor;
-  const badges = userBadges(account?.public_flags);
+  // The REST account carries public_flags; the member's user object usually
+  // does too, so badges show before that request lands.
+  const flagged = account ?? user;
+  const badges = userBadges(flagged);
   const avatar =
     memberAvatarUrl(guildId, userId, member?.avatar, 128) ??
     (user ? userAvatarUrl(user, 128) : undefined);
@@ -159,6 +163,7 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
         discriminator: user?.discriminator ?? null,
         avatar: user?.avatar ?? null,
         bot: user?.bot,
+        publicFlags: flagged?.public_flags ?? null,
         nick: member?.nick ?? null,
         guildId,
         guildName: guild?.name ?? null,
@@ -230,11 +235,7 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
             >
               {member ? displayName(member) : (account?.global_name ?? "Unknown member")}
             </span>
-            {user?.bot && (
-              <span className="rounded bg-accent px-1 py-px text-[10px] leading-none font-medium text-white">
-                {badges.some((badge) => badge.label === "Verified Bot") ? "✓ BOT" : "BOT"}
-              </span>
-            )}
+            <BotTag user={flagged} />
           </p>
           <p className="text-sm text-text">
             @{user?.username ?? account?.username ?? userId}
@@ -244,18 +245,21 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
           </p>
 
           {badges.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-1">
-              {badges.map((badge) => (
-                <li
-                  key={badge.label}
-                  title={badge.label}
-                  className="grid h-6 w-6 place-items-center rounded bg-panel text-sm"
-                >
-                  <span aria-hidden>{badge.glyph}</span>
-                  <span className="sr-only">{badge.label}</span>
-                </li>
-              ))}
-            </ul>
+            <Section title={`Badges — ${badges.length}`}>
+              <ul className="flex flex-col gap-1">
+                {badges.map((badge) => (
+                  <li key={badge.label} className="flex items-start gap-2">
+                    <span aria-hidden className="text-sm leading-tight">
+                      {badge.glyph}
+                    </span>
+                    <span className="min-w-0 flex-1 leading-tight">
+                      <span className="block text-xs font-semibold text-text">{badge.label}</span>
+                      <span className="block text-[11px] text-muted">{badge.description}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
           )}
 
           {status && (

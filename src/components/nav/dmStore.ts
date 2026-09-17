@@ -19,6 +19,8 @@ export interface DMUserInfo {
   discriminator?: string | null;
   avatar?: string | null;
   bot?: boolean;
+  /** `public_flags`, so a verified application stays marked as one. */
+  publicFlags?: number | null;
   /** Nickname in the server the DM was opened from. */
   nick?: string | null;
   /** The server the DM was started from, kept as context. */
@@ -54,6 +56,7 @@ interface DMChannel {
     discriminator?: string | null;
     avatar?: string | null;
     bot?: boolean;
+    public_flags?: number | null;
   }>;
 }
 
@@ -126,6 +129,7 @@ export function rememberDM(channel: DMChannel, about: DMUserInfo = {}): StoredDM
       about.discriminator ?? recipient?.discriminator ?? previous?.discriminator ?? null,
     avatar: about.avatar ?? recipient?.avatar ?? previous?.avatar ?? null,
     bot: about.bot ?? recipient?.bot ?? previous?.bot,
+    publicFlags: about.publicFlags ?? recipient?.public_flags ?? previous?.publicFlags ?? null,
     nick: about.nick ?? previous?.nick ?? null,
     guildId: about.guildId ?? previous?.guildId ?? null,
     guildName: about.guildName ?? previous?.guildName ?? null,

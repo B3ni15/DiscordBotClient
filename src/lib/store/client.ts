@@ -16,6 +16,13 @@ import type {
 import { api } from "@/lib/discord/api";
 import { GatewayIntent, hasIntent } from "@/lib/discord/constants";
 import { GatewayClient, type GatewayStatus } from "@/lib/discord/gateway";
+import {
+  DEFAULT_SELF_PRESENCE,
+  loadSelfPresence,
+  saveSelfPresence,
+  toGatewayPresence,
+  type SelfPresence,
+} from "@/lib/discord/selfPresence";
 import { RestClient } from "@/lib/discord/rest";
 import { rememberDM, type DMUserInfo } from "@/components/nav/dmStore";
 import { useUI } from "@/lib/store/ui";
@@ -89,6 +96,8 @@ interface ClientState {
   presenceEnabled: boolean;
   /** Who is sitting in which voice channel, per guild, keyed by user id. */
   voiceStatesByGuild: Record<string, Record<string, VoiceState>>;
+  /** The presence this bot publishes for itself. */
+  selfPresence: SelfPresence;
   typingByChannel: Record<string, TypingUser[]>;
 
   selectedGuildId: string | null;
@@ -101,6 +110,8 @@ interface ClientState {
   selectChannel: (channelId: string) => Promise<void>;
   loadOlderMessages: (channelId: string) => Promise<void>;
   sendMessage: (channelId: string, content: string, files?: File[]) => Promise<void>;
+  /** Publishes a new presence for this bot and remembers it for next time. */
+  setSelfPresence: (presence: SelfPresence) => void;
   /** Opens (or re-opens) the DM with a user, files it under Direct Messages and selects it. */
   openDM: (userId: string, about?: DMUserInfo) => Promise<string>;
   /** Fetches a channel the gateway never announced (a DM, an archived thread). */
@@ -127,6 +138,7 @@ export const useClient = create<ClientState>((set, get) => ({
   presenceByGuild: {},
   presenceEnabled: false,
   voiceStatesByGuild: {},
+  selfPresence: DEFAULT_SELF_PRESENCE,
   typingByChannel: {},
   selectedGuildId: null,
   selectedChannelId: null,
@@ -159,14 +171,22 @@ export const useClient = create<ClientState>((set, get) => ({
     localStorage.setItem(TOKEN_KEY, normalizedToken);
     set({ token: normalizedToken, user });
 
+    const presence = loadSelfPresence();
+    set({ selfPresence: presence });
+
     gateway?.disconnect();
     gateway = new GatewayClient(normalizedToken);
+    gateway.setMobile(presence.mobile);
+    gateway.setPresence(toGatewayPresence(presence));
     gateway.on("status", (status) => set({ status }));
     gateway.on("intents", (intents) =>
       set({ presenceEnabled: hasIntent(intents, GatewayIntent.GuildPresences) }),
     );
     gateway.on("error", (error) => set({ error: error.message }));
-    gateway.on("dispatch", (event, data) => handleDispatch(set, get, event, data));
+    gateway.on("dispatch", (event, data) => {
+      if (event === "READY") gateway?.setPresence(toGatewayPresence(get().selfPresence));
+      handleDispatch(set, get, event, data);
+    });
     gateway.connect();
   },
 
@@ -240,6 +260,14 @@ export const useClient = create<ClientState>((set, get) => ({
     } catch (cause) {
       set({ error: formatClientError(cause, "Could not load older messages.") });
     }
+  },
+
+  setSelfPresence: (presence) => {
+    saveSelfPresence(presence);
+    set({ selfPresence: presence });
+    // Toggling mobile re-identifies, which replays the presence from IDENTIFY.
+    gateway?.setMobile(presence.mobile);
+    gateway?.setPresence(toGatewayPresence(presence));
   },
 
   hydrateChannel: async (channelId) => {

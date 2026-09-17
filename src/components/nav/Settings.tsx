@@ -1,7 +1,10 @@
 "use client";
 
 import { NotificationSettings } from "@/components/notifications/NotificationSettings";
+import { PresenceEditor } from "@/components/nav/PresenceEditor";
+import { BotTag } from "@/components/ui/BotTag";
 import { userAvatarUrl } from "@/lib/discord/cdn";
+import { isVerifiedBot, userBadges } from "@/lib/discord/userFlags";
 import { useClient } from "@/lib/store/client";
 
 export interface SettingsProps {
@@ -28,7 +31,7 @@ export function Settings({ onClose, className }: SettingsProps) {
   return (
     <aside
       aria-label="Settings"
-      className={`flex min-h-0 w-80 shrink-0 flex-col border-l border-line bg-panel ${className ?? ""}`}
+      className={`flex h-full min-h-0 w-full flex-col bg-panel ${className ?? ""}`}
     >
       <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line px-4">
         <h2 className="text-xs font-semibold text-muted">Settings</h2>
@@ -54,19 +57,37 @@ export function Settings({ onClose, className }: SettingsProps) {
               <div className="min-w-0">
                 <p className="flex items-center gap-2 text-sm font-semibold">
                   <span className="truncate">{user.global_name ?? user.username}</span>
-                  {user.bot && (
-                    <span className="rounded bg-accent/15 px-1 font-mono text-[10px] text-accent">
-                      BOT
-                    </span>
-                  )}
+                  <BotTag user={user} />
                 </p>
                 <p className="truncate font-mono text-[11px] text-muted">{user.id}</p>
+                <p className="text-[11px] text-muted">
+                  {isVerifiedBot(user)
+                    ? "Verified by Discord."
+                    : "Not verified. Verification is required past 100 servers."}
+                </p>
               </div>
             </div>
           ) : (
             <p className="text-xs text-muted">Not signed in. Add a bot token to connect.</p>
           )}
+
+          {user && userBadges(user).length > 0 && (
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {userBadges(user).map((badge) => (
+                <li
+                  key={badge.label}
+                  title={badge.description}
+                  className="flex items-center gap-1.5 rounded bg-raised px-2 py-1 text-[11px] text-text"
+                >
+                  <span aria-hidden>{badge.glyph}</span>
+                  {badge.label}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
+
+        <PresenceEditor />
 
         <NotificationSettings className="mb-6" />
 

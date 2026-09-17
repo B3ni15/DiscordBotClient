@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore, type FormEvent } from "react";
+import { BotTag } from "@/components/ui/BotTag";
 import { Spinner } from "@/components/ui/Spinner";
 import { UserPanel } from "@/components/UserPanel";
 import { userAvatarUrl } from "@/lib/discord/cdn";
@@ -148,11 +149,10 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
                       <span className="min-w-0 flex-1 leading-tight">
                         <span className="flex items-center gap-1.5">
                           <span className="truncate text-[15px] font-medium">{entry.name}</span>
-                          {entry.bot && (
-                            <span className="shrink-0 rounded bg-accent px-1 py-px text-[9px] leading-none font-medium text-white">
-                              BOT
-                            </span>
-                          )}
+                          <BotTag
+                            user={{ bot: entry.bot, public_flags: entry.publicFlags }}
+                            size="sm"
+                          />
                         </span>
                         <span className="block truncate text-[11px] text-faint">{handle}</span>
                       </span>

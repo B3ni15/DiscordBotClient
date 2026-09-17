@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { APIMessage } from "discord-api-types/v10";
 import { EmojiPicker } from "@/components/actions/EmojiPicker";
 import { Spinner } from "@/components/ui/Spinner";
@@ -37,6 +37,36 @@ export function Composer({
   const lastTypingAt = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
+
+  // Hitting reply should put the caret in the box, not make you click it.
+  useEffect(() => {
+    if (replyTo) textarea.current?.focus();
+  }, [replyTo]);
+
+  /**
+   * Typing anywhere that is not already a field jumps into the composer, the way
+   * Discord lets you answer without aiming at the box first. Focusing during
+   * keydown means the character itself still lands in the textarea.
+   */
+  useEffect(() => {
+    function handleGlobalKey(event: KeyboardEvent) {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      // Printable characters only; navigation and shortcuts stay where they are.
+      if (event.key.length !== 1) return;
+      const active = document.activeElement as HTMLElement | null;
+      if (
+        active?.isContentEditable ||
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      textarea.current?.focus();
+    }
+    document.addEventListener("keydown", handleGlobalKey);
+    return () => document.removeEventListener("keydown", handleGlobalKey);
+  }, []);
 
   async function send() {
     if (sending || (!content.trim() && files.length === 0)) return;

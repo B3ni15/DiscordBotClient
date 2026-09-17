@@ -7,6 +7,7 @@ import { MessageToolbar } from "@/components/actions/MessageToolbar";
 import { ReactionBar } from "@/components/actions/ReactionBar";
 import { MessageContent } from "@/components/message/MessageContent";
 import { ThreadCreate } from "@/components/nav/ThreadCreate";
+import { BotTag } from "@/components/ui/BotTag";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -384,11 +385,7 @@ function MessageRow({
                 <span className="text-[15px] leading-tight font-medium text-bright">
                   {displayName}
                 </span>
-                {message.author.bot && (
-                  <span className="rounded bg-accent px-1 py-px text-[10px] leading-none font-medium text-white">
-                    BOT
-                  </span>
-                )}
+                <BotTag user={message.author} />
                 <time
                   dateTime={message.timestamp}
                   className="text-[11px] text-faint"

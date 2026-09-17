@@ -1,4 +1,5 @@
 import { GATEWAY_URL, GatewayIntent, INTENT_LADDER, hasIntent } from "./constants";
+import { identifyProperties, type GatewayPresencePayload } from "./selfPresence";
 
 export const GatewayOpcode = {
   Dispatch: 0,
@@ -65,6 +66,10 @@ export class GatewayClient {
   #resumeUrl: string | null = null;
   #ackPending = false;
   #intentStep = 0;
+  /** Presence to publish; sent with IDENTIFY and re-sent whenever it changes. */
+  #presence: GatewayPresencePayload | null = null;
+  /** Identify as a phone, which is what makes Discord show the mobile icon. */
+  #mobile = false;
   #reconnectAttempts = 0;
   #closedByUser = false;
   #listeners: { [K in keyof GatewayEvents]: Set<GatewayEvents[K]> } = {
@@ -108,6 +113,33 @@ export class GatewayClient {
     this.#sessionId = null;
     this.#lastSequence = null;
     this.#setStatus("closed");
+  }
+
+  /**
+   * Sets the presence published for this bot. A presence sent over the socket
+   * does not survive a reconnect, so it is kept and re-sent with every IDENTIFY.
+   */
+  setPresence(presence: GatewayPresencePayload) {
+    this.#presence = presence;
+    this.#send({ op: GatewayOpcode.PresenceUpdate, d: presence });
+  }
+
+  /**
+   * Desktop or mobile. Discord reads this from the identify properties alone,
+   * so the change only takes effect on a fresh session: the socket is dropped
+   * and re-identified rather than resumed.
+   */
+  setMobile(mobile: boolean) {
+    if (this.#mobile === mobile) return;
+    this.#mobile = mobile;
+    if (this.status === "idle" || this.status === "closed") return;
+    this.#sessionId = null;
+    this.#lastSequence = null;
+    this.#socket?.close(4000);
+  }
+
+  get mobile(): boolean {
+    return this.#mobile;
   }
 
   /** Ask for the member list of a guild; answers arrive as GUILD_MEMBERS_CHUNK. */
@@ -240,7 +272,8 @@ export class GatewayClient {
       d: {
         token: this.#token,
         intents: this.intents,
-        properties: { os: "browser", browser: "disbotclient", device: "disbotclient" },
+        properties: identifyProperties(this.#mobile),
+        ...(this.#presence ? { presence: this.#presence } : {}),
       },
     });
   }
