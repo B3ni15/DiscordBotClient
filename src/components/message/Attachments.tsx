@@ -63,7 +63,7 @@ function AttachmentItem({
       <button
         type="button"
         onClick={onPreview}
-        className="block w-fit max-w-md overflow-hidden rounded border border-line"
+        className="block w-fit max-w-md cursor-zoom-in overflow-hidden rounded"
         aria-label={`Open ${attachment.filename} full size`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -85,7 +85,7 @@ function AttachmentItem({
         controls
         preload="metadata"
         src={attachment.url}
-        className="max-h-80 w-fit max-w-md rounded border border-line"
+        className="max-h-80 w-fit max-w-md rounded"
       >
         Your browser cannot play this video.
       </video>
