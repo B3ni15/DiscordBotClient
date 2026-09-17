@@ -7,6 +7,7 @@ import type {
   APIGuild,
   APIGuildMember,
   APIMessage,
+  APIRole,
   APIUser,
   GatewayGuildCreateDispatchData,
   GatewayMessageReactionAddDispatchData,
@@ -14,6 +15,7 @@ import type {
   GatewayTypingStartDispatchData,
 } from "discord-api-types/v10";
 import { api } from "@/lib/discord/api";
+import { guildApi } from "@/lib/discord/guildApi";
 import { GatewayIntent, hasIntent } from "@/lib/discord/constants";
 import { GatewayClient, type GatewayStatus } from "@/lib/discord/gateway";
 import {
@@ -90,7 +92,7 @@ export interface TypingUser {
   startedAt: number;
 }
 
-interface ClientState {
+export interface ClientState {
   token: string | null;
   status: GatewayStatus;
   error: string | null;
@@ -133,6 +135,21 @@ interface ClientState {
   openDM: (userId: string, about?: DMUserInfo) => Promise<string>;
   /** Fetches a channel the gateway never announced (a DM, an archived thread). */
   hydrateChannel: (channelId: string) => Promise<void>;
+  /**
+   * Makes sure the bot's own member object is known for a guild. Without the
+   * members intent it is missing from GUILD_CREATE, and every permission check
+   * in the UI depends on it.
+   */
+  ensureSelfMember: (guildId: string) => Promise<APIGuildMember | null>;
+  /** Writes a role into the guild, replacing the one with the same id. */
+  upsertRole: (guildId: string, role: APIRole) => void;
+  removeRole: (guildId: string, roleId: string) => void;
+  upsertMember: (guildId: string, member: APIGuildMember) => void;
+  /** Applies a member's new role set locally; the gateway echo may never come. */
+  setMemberRoles: (guildId: string, userId: string, roles: string[]) => void;
+  /** Writes a channel into the store, keeping the guild's channel list sorted. */
+  upsertChannel: (channel: APIChannel) => void;
+  dropChannel: (channelId: string) => void;
   getRest: () => RestClient;
   getGateway: () => GatewayClient | null;
 }
@@ -297,6 +314,91 @@ export const useClient = create<ClientState>((set, get) => ({
     }
   },
 
+  ensureSelfMember: async (guildId) => {
+    const selfId = get().user?.id;
+    if (!selfId) return null;
+    const known = get().membersByGuild[guildId]?.[selfId];
+    if (known) return known;
+    try {
+      const member = await guildApi.member(get().getRest(), guildId, selfId);
+      get().upsertMember(guildId, member);
+      return member;
+    } catch {
+      // Permission checks fall back to "nothing is allowed" until this lands.
+      return null;
+    }
+  },
+
+  upsertRole: (guildId, role) => {
+    set((state) => {
+      const guild = state.guilds[guildId];
+      if (!guild) return {};
+      const roles = guild.roles.some((existing) => existing.id === role.id)
+        ? guild.roles.map((existing) => (existing.id === role.id ? role : existing))
+        : [...guild.roles, role];
+      return { guilds: { ...state.guilds, [guildId]: { ...guild, roles } } };
+    });
+  },
+
+  removeRole: (guildId, roleId) => {
+    set((state) => {
+      const guild = state.guilds[guildId];
+      if (!guild) return {};
+      const members = state.membersByGuild[guildId];
+      return {
+        guilds: {
+          ...state.guilds,
+          [guildId]: { ...guild, roles: guild.roles.filter((role) => role.id !== roleId) },
+        },
+        // A deleted role is gone from everyone who held it.
+        membersByGuild: members
+          ? {
+              ...state.membersByGuild,
+              [guildId]: Object.fromEntries(
+                Object.entries(members).map(([id, member]) => [
+                  id,
+                  member.roles.includes(roleId)
+                    ? { ...member, roles: member.roles.filter((role) => role !== roleId) }
+                    : member,
+                ]),
+              ),
+            }
+          : state.membersByGuild,
+      };
+    });
+  },
+
+  upsertMember: (guildId, member) => {
+    if (!member.user) return;
+    set((state) => ({
+      membersByGuild: {
+        ...state.membersByGuild,
+        [guildId]: { ...(state.membersByGuild[guildId] ?? {}), [member.user!.id]: member },
+      },
+    }));
+  },
+
+  setMemberRoles: (guildId, userId, roles) => {
+    set((state) => {
+      const member = state.membersByGuild[guildId]?.[userId];
+      if (!member) return {};
+      return {
+        membersByGuild: {
+          ...state.membersByGuild,
+          [guildId]: { ...state.membersByGuild[guildId], [userId]: { ...member, roles } },
+        },
+      };
+    });
+  },
+
+  upsertChannel: (channel) => {
+    set((state) => insertChannel(state, channel));
+  },
+
+  dropChannel: (channelId) => {
+    set((state) => removeChannel(state, channelId));
+  },
+
   openDM: async (userId, about) => {
     const channel = (await api.createDM(get().getRest(), userId)) as APIDMChannel;
     rememberDM(channel, about);
@@ -428,6 +530,19 @@ function handleDispatch(
       });
       break;
     }
+    case "GUILD_ROLE_CREATE":
+    case "GUILD_ROLE_UPDATE": {
+      const data = raw as { guild_id: string; role: APIRole };
+      if (!data.guild_id || !data.role) break;
+      get().upsertRole(data.guild_id, data.role);
+      break;
+    }
+    case "GUILD_ROLE_DELETE": {
+      const data = raw as { guild_id: string; role_id: string };
+      if (!data.guild_id || !data.role_id) break;
+      get().removeRole(data.guild_id, data.role_id);
+      break;
+    }
     case "CHANNEL_CREATE":
     case "CHANNEL_UPDATE": {
       const channel = raw as APIChannel & { guild_id?: string };
@@ -435,44 +550,12 @@ function handleDispatch(
         rememberDM(channel as APIDMChannel);
         break;
       }
-      set((state) => {
-        const guildId = channel.guild_id;
-        const existing = guildId ? (state.channelsByGuild[guildId] ?? []) : [];
-        const channelsById = { ...state.channelsById, [channel.id]: channel };
-        const ids = existing.includes(channel.id) ? existing : [...existing, channel.id];
-        return {
-          channelsById,
-          channelsByGuild: guildId
-            ? {
-                ...state.channelsByGuild,
-                [guildId]: sortChannels(ids.map((id) => channelsById[id]).filter(Boolean)).map(
-                  (c) => c.id,
-                ),
-              }
-            : state.channelsByGuild,
-        };
-      });
+      set((state) => insertChannel(state, channel));
       break;
     }
     case "CHANNEL_DELETE": {
       const channel = raw as APIChannel & { guild_id?: string };
-      set((state) => {
-        const channelsById = { ...state.channelsById };
-        delete channelsById[channel.id];
-        return {
-          channelsById,
-          channelsByGuild: channel.guild_id
-            ? {
-                ...state.channelsByGuild,
-                [channel.guild_id]: (state.channelsByGuild[channel.guild_id] ?? []).filter(
-                  (id) => id !== channel.id,
-                ),
-              }
-            : state.channelsByGuild,
-          selectedChannelId:
-            state.selectedChannelId === channel.id ? null : state.selectedChannelId,
-        };
-      });
+      set((state) => removeChannel(state, channel.id));
       break;
     }
     case "MESSAGE_CREATE": {
@@ -628,6 +711,44 @@ function handleDispatch(
       break;
     }
   }
+}
+
+/**
+ * Adds or replaces a channel and re-sorts the guild's list around it, so a
+ * channel created from the UI lands where Discord would put it.
+ */
+function insertChannel(state: ClientState, channel: APIChannel): Partial<ClientState> {
+  const guildId = "guild_id" in channel ? (channel.guild_id as string | undefined) : undefined;
+  const channelsById = { ...state.channelsById, [channel.id]: channel };
+  if (!guildId) return { channelsById };
+  const existing = state.channelsByGuild[guildId] ?? [];
+  const ids = existing.includes(channel.id) ? existing : [...existing, channel.id];
+  return {
+    channelsById,
+    channelsByGuild: {
+      ...state.channelsByGuild,
+      [guildId]: sortChannels(ids.map((id) => channelsById[id]).filter(Boolean)).map((c) => c.id),
+    },
+  };
+}
+
+function removeChannel(state: ClientState, channelId: string): Partial<ClientState> {
+  const channel = state.channelsById[channelId];
+  const guildId =
+    channel && "guild_id" in channel ? (channel.guild_id as string | undefined) : undefined;
+  const channelsById = { ...state.channelsById };
+  delete channelsById[channelId];
+  return {
+    channelsById,
+    channelsByGuild: guildId
+      ? {
+          ...state.channelsByGuild,
+          [guildId]: (state.channelsByGuild[guildId] ?? []).filter((id) => id !== channelId),
+        }
+      : state.channelsByGuild,
+    selectedChannelId:
+      state.selectedChannelId === channelId ? null : state.selectedChannelId,
+  };
 }
 
 function mapMessage(

@@ -2,9 +2,11 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import type { APIMessage } from "discord-api-types/v10";
+import { DeleteConfirm } from "@/components/actions/DeleteConfirm";
 import { MessageEditor } from "@/components/actions/MessageEditor";
 import { MessageToolbar } from "@/components/actions/MessageToolbar";
 import { ReactionBar } from "@/components/actions/ReactionBar";
+import { channelMenuItems, memberMenuItems, messageMenuItems } from "@/components/context/menus";
 import { MessageContent } from "@/components/message/MessageContent";
 import { ThreadCreate } from "@/components/nav/ThreadCreate";
 import { BotTag } from "@/components/ui/BotTag";
@@ -13,6 +15,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { useClient } from "@/lib/store/client";
+import { openMenuFor } from "@/lib/store/contextMenu";
 import { useUI } from "@/lib/store/ui";
 import { Composer } from "./Composer";
 import { TypingIndicator } from "./TypingIndicator";
@@ -52,6 +55,7 @@ function ChannelView({ channelId }: { channelId: string }) {
   const loadOlder = useClient((state) => state.loadOlderMessages);
   const hasMore = useClient((state) => state.hasMoreByChannel[channelId]);
   const selfId = useClient((state) => state.user?.id);
+  const guildId = useClient((state) => state.selectedGuildId);
   const scroller = useRef<HTMLDivElement>(null);
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -98,7 +102,12 @@ function ChannelView({ channelId }: { channelId: string }) {
 
   return (
     <section className="flex min-w-0 flex-1 flex-col bg-chat">
-      <header className="z-10 flex h-12 shrink-0 items-center gap-2 px-4 shadow-[0_1px_0_rgba(0,0,0,0.2),0_2px_0_rgba(0,0,0,0.05)]">
+      <header
+        onContextMenu={(event) => {
+          if (channel) openMenuFor(event, "Channel", channelMenuItems(channel, guildId));
+        }}
+        className="z-10 flex h-12 shrink-0 items-center gap-2 px-4 shadow-[0_1px_0_rgba(0,0,0,0.2),0_2px_0_rgba(0,0,0,0.05)]"
+      >
         <span aria-hidden className="text-xl leading-none text-faint">
           {isDM ? "@" : isVoice ? (channel?.type === 13 ? "📡" : "🔊") : "#"}
         </span>
@@ -310,6 +319,28 @@ function MessageRow({
   onEdit,
   onEditDone,
 }: MessageRowProps) {
+  const guildId = useClient((state) => state.selectedGuildId);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  /** Discord's message right-click, with the same actions as the hover toolbar. */
+  function openMessageMenu(event: React.MouseEvent) {
+    openMenuFor(
+      event,
+      "Message",
+      messageMenuItems(message, guildId, {
+        onReply,
+        onEdit,
+        onDelete: () => setConfirmDelete(true),
+      }),
+    );
+  }
+
+  /** The author's name and avatar open the member menu, as in Discord. */
+  function openAuthorMenu(event: React.MouseEvent) {
+    if (!guildId) return;
+    openMenuFor(event, message.author.username, memberMenuItems(guildId, message.author.id));
+  }
+
   const grouped =
     previous !== undefined &&
     previous.author.id === message.author.id &&
@@ -350,6 +381,7 @@ function MessageRow({
       )}
       <li
         data-message-id={message.id}
+        onContextMenu={openMessageMenu}
         className={`group relative animate-message-in px-2 transition-colors hover:bg-[rgb(0_0_0/0.06)] ${
           grouped ? "py-0.5" : "mt-4 py-1"
         }`}
@@ -378,11 +410,15 @@ function MessageRow({
             <img
               src={userAvatarUrl(message.author, 80)}
               alt=""
+              onContextMenu={openAuthorMenu}
               className="mt-0.5 h-10 w-10 shrink-0 rounded-full"
             />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
-                <span className="text-[15px] leading-tight font-medium text-bright">
+                <span
+                  onContextMenu={openAuthorMenu}
+                  className="text-[15px] leading-tight font-medium text-bright"
+                >
                   {displayName}
                 </span>
                 <BotTag user={message.author} />
@@ -397,6 +433,10 @@ function MessageRow({
               {body}
             </div>
           </div>
+        )}
+
+        {confirmDelete && (
+          <DeleteConfirm message={message} onClose={() => setConfirmDelete(false)} />
         )}
       </li>
     </>

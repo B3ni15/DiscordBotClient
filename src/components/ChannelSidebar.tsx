@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import type { APIChannel } from "discord-api-types/v10";
+import { categoryMenuItems, channelMenuItems, guildMenuItems } from "@/components/context/menus";
 import { MuteButton } from "@/components/notifications/MuteButton";
 import { UnreadBadge } from "@/components/notifications/UnreadBadge";
 import { ThreadList } from "@/components/nav/ThreadList";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useUnread } from "@/lib/notifications/unread";
 import { isTextChannel, isVoiceChannel, useClient } from "@/lib/store/client";
+import { openMenuFor } from "@/lib/store/contextMenu";
 import { UserPanel } from "./UserPanel";
 import { VoiceChannelRow } from "./VoiceChannelRow";
 
@@ -36,7 +38,12 @@ export function ChannelSidebar() {
 
   return (
     <div className="flex w-60 shrink-0 flex-col bg-panel">
-      <header className="flex h-12 shrink-0 items-center px-4 shadow-[0_1px_0_rgba(0,0,0,0.2),0_2px_0_rgba(0,0,0,0.05)]">
+      <header
+        onContextMenu={(event) => {
+          if (selectedGuildId) openMenuFor(event, "Server", guildMenuItems(selectedGuildId));
+        }}
+        className="flex h-12 shrink-0 items-center px-4 shadow-[0_1px_0_rgba(0,0,0,0.2),0_2px_0_rgba(0,0,0,0.05)]"
+      >
         <h2 className="truncate text-[15px] font-semibold text-bright">
           {guild?.name ?? "Pick a server"}
         </h2>
@@ -68,6 +75,20 @@ export function ChannelSidebar() {
                 {group.name && (
                   <button
                     type="button"
+                    onContextMenu={(event) => {
+                      const category = group.id ? channelsById[group.id] : undefined;
+                      if (category && selectedGuildId) {
+                        openMenuFor(
+                          event,
+                          "Category",
+                          categoryMenuItems(category, selectedGuildId, {
+                            collapsed: isCollapsed,
+                            onToggleCollapse: () =>
+                              setCollapsed((state) => ({ ...state, [key]: !isCollapsed })),
+                          }),
+                        );
+                      }
+                    }}
                     onClick={() => setCollapsed((state) => ({ ...state, [key]: !isCollapsed }))}
                     aria-expanded={!isCollapsed}
                     className="flex w-full items-center gap-0.5 px-0.5 pb-1 text-[11px] font-bold tracking-wide text-muted uppercase transition-colors hover:text-bright"
@@ -111,6 +132,7 @@ export function ChannelSidebar() {
 function ChannelRow({ channel }: { channel: APIChannel }) {
   const selectedChannelId = useClient((state) => state.selectedChannelId);
   const selectChannel = useClient((state) => state.selectChannel);
+  const guildId = useClient((state) => state.selectedGuildId);
   const unread = useUnread(channel.id);
 
   const active = channel.id === selectedChannelId;
@@ -119,7 +141,10 @@ function ChannelRow({ channel }: { channel: APIChannel }) {
   const glyph = channel.type === ANNOUNCEMENT ? "📢" : channel.type >= THREAD ? "🧵" : "#";
 
   return (
-    <li className="group/channel relative flex items-center gap-1">
+    <li
+      onContextMenu={(event) => openMenuFor(event, "Channel", channelMenuItems(channel, guildId))}
+      className="group/channel relative flex items-center gap-1"
+    >
       {active && (
         <span
           aria-hidden

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { APIGuildMember, APIRole } from "discord-api-types/v10";
+import { memberMenuItems } from "@/components/context/menus";
 import { UserCard } from "@/components/members/UserCard";
 import { BotTag } from "@/components/ui/BotTag";
 import { SkeletonRows } from "@/components/ui/Skeleton";
@@ -16,6 +17,7 @@ import {
 } from "@/lib/discord/roles";
 import { activityLine } from "@/lib/discord/presence";
 import { OFFLINE_PRESENCE, useClient, type Presence } from "@/lib/store/client";
+import { openMenuFor } from "@/lib/store/contextMenu";
 
 const OFFLINE_GROUP_ID = "__offline__";
 const EMPTY_PRESENCES: Record<string, Presence> = {};
@@ -190,6 +192,15 @@ export function MemberSidebar() {
                       <button
                         type="button"
                         onClick={() => setOpenUserId(user.id)}
+                        onContextMenu={(event) =>
+                          openMenuFor(
+                            event,
+                            displayName(member),
+                            memberMenuItems(guildId, user.id, {
+                              onProfile: () => setOpenUserId(user.id),
+                            }),
+                          )
+                        }
                         className={`flex w-full items-center gap-3 rounded px-2 py-1 text-left transition-colors hover:bg-hover ${
                           hasPresence && offline ? "opacity-40 hover:opacity-100" : ""
                         }`}

@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { api } from "@/lib/discord/api";
 import { replyToMessage } from "@/lib/discord/messageActions";
 import { useClient } from "@/lib/store/client";
+import { useUI } from "@/lib/store/ui";
 
 const TYPING_THROTTLE = 8000;
 
@@ -42,6 +43,25 @@ export function Composer({
   useEffect(() => {
     if (replyTo) textarea.current?.focus();
   }, [replyTo]);
+
+  /*
+   * "Mention" in a context menu drops the mention in here rather than on the
+   * clipboard. Subscribing straight to the store keeps it a one-way push: the
+   * composer never renders the pending text, it just consumes it.
+   */
+  useEffect(
+    () =>
+      useUI.subscribe((state, previous) => {
+        const insert = state.pendingInsert;
+        if (!insert || insert === previous.pendingInsert) return;
+        setContent((current) =>
+          current.trim() ? `${current.trimEnd()} ${insert.text} ` : `${insert.text} `,
+        );
+        textarea.current?.focus();
+        useUI.getState().clearInsert();
+      }),
+    [],
+  );
 
   /**
    * Typing anywhere that is not already a field jumps into the composer, the way
