@@ -1,60 +1,18 @@
 "use client";
 
+import { PermissionFlagsBits } from "discord-api-types/v10";
 import type { APIChannel, APIGuildMember } from "discord-api-types/v10";
 import { channelMenuItems, memberMenuItems } from "@/components/context/menus";
+import { DeafIcon, DisconnectIcon, MicIcon, MicOffIcon, VideoIcon } from "@/components/voice/icons";
+import { useGuildPowers } from "@/lib/discord/useGuildPowers";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { displayName, memberColorHex } from "@/lib/discord/roles";
 import { useClient, type VoiceState } from "@/lib/store/client";
+import { useBridge } from "@/lib/voice/bridge";
 import { openMenuFor } from "@/lib/store/contextMenu";
 
 const STAGE = 13;
 const EMPTY_VOICE: Record<string, VoiceState> = {};
-
-/** Mic with a slash: the member's microphone is off. */
-function MicOffIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden className="shrink-0">
-      <path
-        fill="currentColor"
-        d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zm7 9a7 7 0 0 1-14 0H3a9 9 0 0 0 8 8.94V23h2v-3.06A9 9 0 0 0 21 11h-2z"
-      />
-      <path
-        d="M3 3l18 18"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-/** Headphones with a slash: the member hears nothing, so they hear nobody. */
-function DeafIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden className="shrink-0">
-      <path
-        fill="currentColor"
-        d="M12 3a9 9 0 0 0-9 9v6a3 3 0 0 0 3 3h2v-8H5v-1a7 7 0 0 1 14 0v1h-3v8h2a3 3 0 0 0 3-3v-6a9 9 0 0 0-9-9z"
-      />
-      <path
-        d="M3 3l18 18"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function VideoIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden className="shrink-0">
-      <path fill="currentColor" d="M3 6h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm15 3.5 4-2.5v10l-4-2.5v-5z" />
-    </svg>
-  );
-}
 
 export interface VoiceChannelRowProps {
   channel: APIChannel;
@@ -62,11 +20,13 @@ export interface VoiceChannelRowProps {
 }
 
 /**
- * A voice channel and whoever is sitting in it.
+ * A voice channel, whoever is sitting in it, and the way in.
  *
- * A bot token cannot open a voice connection from the browser, so the row never
- * pretends to be joinable. It does open the channel's built-in voice text chat,
- * which the bot reads and posts to like any other channel.
+ * Clicking the name opens the channel's built-in voice text chat, as it always
+ * did; the button beside it puts the bot into the channel (a gateway op 4) or
+ * takes it back out. No audio flows over that connection — a page cannot open
+ * Discord's voice UDP socket — so the bot sits there silently until the
+ * soundboard is used.
  */
 export function VoiceChannelRow({ channel, guildId }: VoiceChannelRowProps) {
   const selectedChannelId = useClient((state) => state.selectedChannelId);
@@ -76,6 +36,10 @@ export function VoiceChannelRow({ channel, guildId }: VoiceChannelRowProps) {
   );
   const members = useClient((state) => (guildId ? state.membersByGuild[guildId] : undefined));
   const guild = useClient((state) => (guildId ? state.guilds[guildId] : undefined));
+  const selfVoice = useClient((state) => state.selfVoice);
+  const joinVoice = useClient((state) => state.joinVoice);
+  const leaveVoice = useClient((state) => state.leaveVoice);
+  const powers = useGuildPowers(guildId);
 
   const active = channel.id === selectedChannelId;
   const name = ("name" in channel ? channel.name : null) ?? channel.id;
@@ -85,38 +49,78 @@ export function VoiceChannelRow({ channel, guildId }: VoiceChannelRowProps) {
   const occupants = Object.values(voiceStates).filter((state) => state.channelId === channel.id);
   const roles = guild?.roles ?? [];
 
+  const connected = selfVoice?.channelId === channel.id;
+  const canConnect = powers.canIn(channel, PermissionFlagsBits.Connect);
+  // Discord ignores the limit for anyone who may move members around.
+  const full =
+    limit > 0 &&
+    occupants.length >= limit &&
+    !powers.can(PermissionFlagsBits.MoveMembers) &&
+    !connected;
+
+  const joinReason = !guildId
+    ? "No server selected."
+    : !powers.ready
+      ? "Still working out what the bot may do here."
+      : !canConnect
+        ? "The bot is missing the Connect permission for this channel."
+        : full
+          ? "This channel is full."
+          : null;
+
   return (
     <li
       onContextMenu={(event) => openMenuFor(event, "Channel", channelMenuItems(channel, guildId))}
       className="group/voice"
     >
-      {/*
-        A plain title rather than a floating tooltip: the sidebar scrolls, so an
-        absolutely positioned bubble gets clipped at its edge.
-      */}
-      <button
-        type="button"
-        onClick={() => void selectChannel(channel.id)}
-        aria-current={active ? "true" : undefined}
-        title={
-          isStage
-            ? `${name} — a bot client cannot go on stage. Opens the stage's text chat.`
-            : `${name} — voice cannot be joined from a bot client. Opens the channel's text chat.`
-        }
-        className={`flex w-full min-w-0 items-center gap-1.5 rounded px-2 py-1.5 text-left text-[15px] transition-colors duration-100 ${
-          active ? "bg-raised font-medium text-bright" : "text-muted hover:bg-hover hover:text-text"
-        }`}
-      >
-        <span aria-hidden className="shrink-0 text-base leading-none text-faint">
-          {isStage ? "📡" : "🔊"}
-        </span>
-        <span className="truncate">{name}</span>
-        {limit > 0 && (
-          <span className="ml-auto shrink-0 font-mono text-[10px] text-faint">
-            {occupants.length}/{limit}
+      <div className="flex items-center gap-0.5">
+        {/*
+          A plain title rather than a floating tooltip: the sidebar scrolls, so an
+          absolutely positioned bubble gets clipped at its edge.
+        */}
+        <button
+          type="button"
+          onClick={() => void selectChannel(channel.id)}
+          aria-current={active ? "true" : undefined}
+          title={`${name} — opens the ${isStage ? "stage" : "channel"}'s text chat.`}
+          className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-[15px] transition-colors duration-100 ${
+            active ? "bg-raised font-medium text-bright" : "text-muted hover:bg-hover hover:text-text"
+          } ${connected ? "text-bright" : ""}`}
+        >
+          <span
+            aria-hidden
+            className={`shrink-0 text-base leading-none ${connected ? "text-online" : "text-faint"}`}
+          >
+            {isStage ? "📡" : "🔊"}
           </span>
-        )}
-      </button>
+          <span className="truncate">{name}</span>
+          {limit > 0 && (
+            <span className="ml-auto shrink-0 font-mono text-[10px] text-faint">
+              {occupants.length}/{limit}
+            </span>
+          )}
+        </button>
+
+        {/* `title` again, for the same reason the row above uses one. */}
+        <button
+          type="button"
+          disabled={!connected && joinReason !== null}
+          onClick={() => (connected ? leaveVoice() : guildId && joinVoice(guildId, channel.id))}
+          aria-label={connected ? `Leave ${name}` : `Join ${name}`}
+          title={
+            connected
+              ? "Take the bot out of this channel"
+              : (joinReason ?? `Put the bot in ${name}${isStage ? " (as audience)" : ""}`)
+          }
+          className={`grid h-7 w-7 shrink-0 place-items-center rounded transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+            connected
+              ? "text-danger hover:bg-hover"
+              : "text-faint opacity-0 group-hover/voice:opacity-100 focus-visible:opacity-100 hover:bg-hover hover:text-bright"
+          }`}
+        >
+          {connected ? <DisconnectIcon size={14} /> : <MicIcon size={14} />}
+        </button>
+      </div>
 
       {occupants.length > 0 && (
         <ul className="mt-0.5 mb-1 flex animate-fade-in flex-col gap-0.5 pl-6">
@@ -149,6 +153,13 @@ function Occupant({
   const user = member?.user;
   const name = member ? displayName(member) : state.userId;
   const color = member ? memberColorHex(member, roles) : null;
+  const selfId = useClient((client) => client.user?.id);
+  // Only the bridge can tell who is actually talking: it is the side that
+  // receives the audio. Nobody sends the bot its own voice back, so for the bot
+  // the measure is the level of what this browser is sending.
+  const talking = useBridge((bridge) =>
+    state.userId === selfId ? bridge.selfSpeaking : bridge.speaking.includes(state.userId),
+  );
 
   const muted = state.selfMute || state.serverMute;
   const deafened = state.selfDeaf || state.serverDeaf;
@@ -167,7 +178,9 @@ function Occupant({
         <img
           src={userAvatarUrl(user, 32)}
           alt=""
-          className={`h-6 w-6 shrink-0 rounded-full ${muted || deafened ? "opacity-50" : ""}`}
+          className={`h-6 w-6 shrink-0 rounded-full ${muted || deafened ? "opacity-50" : ""} ${
+            talking ? "ring-2 ring-online" : ""
+          }`}
         />
       ) : (
         <span className="h-6 w-6 shrink-0 rounded-full bg-raised" aria-hidden />

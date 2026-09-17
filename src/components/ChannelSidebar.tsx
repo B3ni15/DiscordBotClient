@@ -10,6 +10,7 @@ import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useUnread } from "@/lib/notifications/unread";
 import { isTextChannel, isVoiceChannel, useClient } from "@/lib/store/client";
 import { openMenuFor } from "@/lib/store/contextMenu";
+import { VoicePanel } from "@/components/voice/VoicePanel";
 import { UserPanel } from "./UserPanel";
 import { VoiceChannelRow } from "./VoiceChannelRow";
 
@@ -123,6 +124,7 @@ export function ChannelSidebar() {
         )}
       </div>
 
+      <VoicePanel />
       <UserPanel />
     </div>
   );

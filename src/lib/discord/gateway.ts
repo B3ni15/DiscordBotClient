@@ -22,6 +22,15 @@ export interface GatewayPayload {
   t?: string | null;
 }
 
+/** What the bot asks Discord to do with its own voice connection (op 4). */
+export interface VoiceStateRequest {
+  guildId: string;
+  /** The channel to sit in, or null to leave voice in this guild. */
+  channelId: string | null;
+  selfMute: boolean;
+  selfDeaf: boolean;
+}
+
 export type GatewayStatus =
   | "idle"
   | "connecting"
@@ -70,6 +79,8 @@ export class GatewayClient {
   #presence: GatewayPresencePayload | null = null;
   /** Identify as a phone, which is what makes Discord show the mobile icon. */
   #mobile = false;
+  /** The voice channel the bot should be in; replayed after a fresh identify. */
+  #voice: VoiceStateRequest | null = null;
   #reconnectAttempts = 0;
   #closedByUser = false;
   #listeners: { [K in keyof GatewayEvents]: Set<GatewayEvents[K]> } = {
@@ -107,6 +118,7 @@ export class GatewayClient {
 
   disconnect() {
     this.#closedByUser = true;
+    this.#voice = null;
     this.#stopHeartbeat();
     this.#socket?.close(1000);
     this.#socket = null;
@@ -122,6 +134,45 @@ export class GatewayClient {
   setPresence(presence: GatewayPresencePayload) {
     this.#presence = presence;
     this.#send({ op: GatewayOpcode.PresenceUpdate, d: presence });
+  }
+
+  /**
+   * Joins, moves between or leaves voice channels (op 4).
+   *
+   * A gateway session owns the voice state it created, so Discord drops the bot
+   * out of the channel whenever the session is replaced. The last request is
+   * kept and replayed on the next READY, which puts the bot back where it was
+   * after a reconnect that could not be resumed.
+   */
+  setVoiceState(request: VoiceStateRequest) {
+    this.#voice = request.channelId ? request : null;
+    this.#sendVoiceState(request);
+  }
+
+  /**
+   * Sends a payload the client itself did not compose. The voice bridge needs
+   * this: it speaks the voice protocol but has no gateway of its own, so the
+   * `op 4` payloads it produces travel out over this socket.
+   */
+  sendRaw(payload: GatewayPayload) {
+    this.#send(payload);
+  }
+
+  /** The voice channel the bot is meant to be in, as last requested. */
+  get voiceState(): VoiceStateRequest | null {
+    return this.#voice;
+  }
+
+  #sendVoiceState(request: VoiceStateRequest) {
+    this.#send({
+      op: GatewayOpcode.VoiceStateUpdate,
+      d: {
+        guild_id: request.guildId,
+        channel_id: request.channelId,
+        self_mute: request.selfMute,
+        self_deaf: request.selfDeaf,
+      },
+    });
   }
 
   /**
@@ -208,6 +259,9 @@ export class GatewayClient {
           this.#reconnectAttempts = 0;
           this.#emit("intents", this.intents);
           this.#setStatus("ready");
+          // A new session starts with no voice state at all, so the one the
+          // user asked for is sent again rather than silently lost.
+          if (this.#voice?.channelId) this.#sendVoiceState(this.#voice);
         } else if (event === "RESUMED") {
           this.#reconnectAttempts = 0;
           this.#setStatus("ready");

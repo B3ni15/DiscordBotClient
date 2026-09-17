@@ -17,7 +17,7 @@ import type {
 import { api } from "@/lib/discord/api";
 import { guildApi } from "@/lib/discord/guildApi";
 import { GatewayIntent, hasIntent } from "@/lib/discord/constants";
-import { GatewayClient, type GatewayStatus } from "@/lib/discord/gateway";
+import { GatewayClient, type GatewayPayload, type GatewayStatus } from "@/lib/discord/gateway";
 import {
   DEFAULT_SELF_PRESENCE,
   loadSelfPresence,
@@ -27,10 +27,28 @@ import {
 } from "@/lib/discord/selfPresence";
 import { RestClient } from "@/lib/discord/rest";
 import { rememberDM, type DMUserInfo } from "@/components/nav/dmStore";
+import {
+  bridgeConnected,
+  bridgeJoin,
+  bridgeLeave,
+  bridgeUpdate,
+  connectBridge,
+  disconnectBridge,
+  feedVoiceServer,
+  feedVoiceState,
+  loadBridgeSettings,
+  resumingVoice,
+  setActiveCallProvider,
+  setGatewaySender,
+  useBridge,
+} from "@/lib/voice/bridge";
 import { useAccount } from "@/lib/store/account";
 import { useUI } from "@/lib/store/ui";
 
 const TOKEN_KEY = "disbotclient:token";
+
+/** How long a join waits for Discord to echo the voice state back. */
+const VOICE_JOIN_TIMEOUT_MS = 10_000;
 
 /** One activity line of a presence, e.g. "Playing Minecraft". */
 /** The artwork an activity publishes, as raw asset keys. */
@@ -86,6 +104,22 @@ export interface VoiceState {
   member?: APIGuildMember;
 }
 
+/**
+ * Where this bot is sitting in voice, as this client asked for it.
+ *
+ * The browser cannot open Discord's voice UDP socket, so there is no audio
+ * stream behind this: the bot shows up in the channel, can be muted, deafened
+ * and moved like any member, and makes sound through the soundboard.
+ */
+export interface SelfVoice {
+  guildId: string;
+  channelId: string;
+  selfMute: boolean;
+  selfDeaf: boolean;
+  /** True until Discord echoes the voice state back over the gateway. */
+  connecting: boolean;
+}
+
 export interface TypingUser {
   userId: string;
   name: string;
@@ -116,6 +150,8 @@ export interface ClientState {
   presenceEnabled: boolean;
   /** Who is sitting in which voice channel, per guild, keyed by user id. */
   voiceStatesByGuild: Record<string, Record<string, VoiceState>>;
+  /** The voice channel this bot is in, or null when it is not in one. */
+  selfVoice: SelfVoice | null;
   /** The presence this bot publishes for itself. */
   selfPresence: SelfPresence;
   typingByChannel: Record<string, TypingUser[]>;
@@ -132,6 +168,14 @@ export interface ClientState {
   sendMessage: (channelId: string, content: string, files?: File[]) => Promise<void>;
   /** Publishes a new presence for this bot and remembers it for next time. */
   setSelfPresence: (presence: SelfPresence) => void;
+  /** Puts the bot into a voice channel, or moves it between two of them. */
+  joinVoice: (guildId: string, channelId: string) => void;
+  /** Leaves the voice channel the bot is in; a no-op when it is in none. */
+  leaveVoice: () => void;
+  /** Mutes or unmutes the bot itself. */
+  setSelfMute: (mute: boolean) => void;
+  /** Deafens or undeafens the bot itself; deafening mutes it too, as Discord does. */
+  setSelfDeaf: (deaf: boolean) => void;
   /** Opens (or re-opens) the DM with a user, files it under Direct Messages and selects it. */
   openDM: (userId: string, about?: DMUserInfo) => Promise<string>;
   /** Fetches a channel the gateway never announced (a DM, an archived thread). */
@@ -158,6 +202,11 @@ export interface ClientState {
 let rest: RestClient | null = null;
 let gateway: GatewayClient | null = null;
 
+/** True while the bridge holds the voice connection, rather than nothing at all. */
+function bridgeStreaming(): boolean {
+  return bridgeConnected() && useBridge.getState().voice !== "idle";
+}
+
 export const useClient = create<ClientState>((set, get) => ({
   token: null,
   status: "idle",
@@ -173,6 +222,7 @@ export const useClient = create<ClientState>((set, get) => ({
   presenceByGuild: {},
   presenceEnabled: false,
   voiceStatesByGuild: {},
+  selfVoice: null,
   selfPresence: DEFAULT_SELF_PRESENCE,
   typingByChannel: {},
   selectedGuildId: null,
@@ -226,7 +276,11 @@ export const useClient = create<ClientState>((set, get) => ({
     gateway = new GatewayClient(normalizedToken);
     gateway.setMobile(presence.mobile);
     gateway.setPresence(toGatewayPresence(presence));
-    gateway.on("status", (status) => set({ status }));
+    // A closed socket takes the voice state with it: Discord drops the bot out
+    // of the channel the moment the session that put it there is gone.
+    gateway.on("status", (status) =>
+      set(status === "closed" ? { status, selfVoice: null } : { status }),
+    );
     gateway.on("intents", (intents) =>
       set({ presenceEnabled: hasIntent(intents, GatewayIntent.GuildPresences) }),
     );
@@ -235,11 +289,33 @@ export const useClient = create<ClientState>((set, get) => ({
       if (event === "READY") gateway?.setPresence(toGatewayPresence(get().selfPresence));
       handleDispatch(set, get, event, data);
     });
+
+    // The voice bridge speaks Discord's voice protocol but owns no gateway, so
+    // the payloads it needs sent go out over this one.
+    loadBridgeSettings();
+    setGatewaySender((payload) => gateway?.sendRaw(payload as GatewayPayload));
+    // A bridge that connects mid-call takes over the call it finds.
+    setActiveCallProvider(() => {
+      const voice = get().selfVoice;
+      return voice
+        ? {
+            guildId: voice.guildId,
+            channelId: voice.channelId,
+            selfMute: voice.selfMute,
+            selfDeaf: voice.selfDeaf,
+          }
+        : null;
+    });
+    if (useBridge.getState().autoConnect) void connectBridge();
+
     gateway.connect();
   },
 
   logout: () => {
     localStorage.removeItem(TOKEN_KEY);
+    setGatewaySender(null);
+    setActiveCallProvider(null);
+    void disconnectBridge();
     gateway?.disconnect();
     gateway = null;
     rest = null;
@@ -258,6 +334,7 @@ export const useClient = create<ClientState>((set, get) => ({
       presenceByGuild: {},
       presenceEnabled: false,
       voiceStatesByGuild: {},
+      selfVoice: null,
       typingByChannel: {},
       selectedGuildId: null,
       selectedChannelId: null,
@@ -316,6 +393,81 @@ export const useClient = create<ClientState>((set, get) => ({
     // Toggling mobile re-identifies, which replays the presence from IDENTIFY.
     gateway?.setMobile(presence.mobile);
     gateway?.setPresence(toGatewayPresence(presence));
+  },
+
+  joinVoice: (guildId, channelId) => {
+    if (!gateway || gateway.status !== "ready") {
+      set({ error: "Not connected to Discord yet." });
+      return;
+    }
+    const current = get().selfVoice;
+    // Moving between channels keeps the mute and deafen the user already chose.
+    const selfMute = current?.selfMute ?? false;
+    const selfDeaf = current?.selfDeaf ?? false;
+
+    // With the bridge running the join belongs to it: it composes the same op 4
+    // and hands it back here to send, then opens the audio connection behind it.
+    if (bridgeConnected()) bridgeJoin(guildId, channelId, { selfMute, selfDeaf });
+    else gateway.setVoiceState({ guildId, channelId, selfMute, selfDeaf });
+    set({ selfVoice: { guildId, channelId, selfMute, selfDeaf, connecting: true } });
+
+    // Discord answers a refused join with silence rather than an error, so a
+    // voice state that never arrives is reported instead of spinning forever.
+    setTimeout(() => {
+      const pending = get().selfVoice;
+      if (!pending?.connecting || pending.channelId !== channelId) return;
+      set({
+        selfVoice: null,
+        error: "Discord did not put the bot in that channel — check its Connect permission.",
+      });
+    }, VOICE_JOIN_TIMEOUT_MS);
+  },
+
+  leaveVoice: () => {
+    const current = get().selfVoice;
+    if (!current) return;
+    // The bridge tears its own connection down first; the op 4 below is what
+    // actually takes the bot out of the channel either way.
+    if (bridgeConnected()) bridgeLeave();
+    gateway?.setVoiceState({
+      guildId: current.guildId,
+      channelId: null,
+      selfMute: current.selfMute,
+      selfDeaf: current.selfDeaf,
+    });
+    set({ selfVoice: null });
+  },
+
+  setSelfMute: (mute) => {
+    const current = get().selfVoice;
+    if (!current) return;
+    // Discord's own client lifts the deafen as soon as you unmute.
+    const selfDeaf = mute ? current.selfDeaf : false;
+    if (bridgeStreaming()) bridgeUpdate({ selfMute: mute, selfDeaf });
+    else
+      gateway?.setVoiceState({
+        guildId: current.guildId,
+        channelId: current.channelId,
+        selfMute: mute,
+        selfDeaf,
+      });
+    set({ selfVoice: { ...current, selfMute: mute, selfDeaf } });
+  },
+
+  setSelfDeaf: (deaf) => {
+    const current = get().selfVoice;
+    if (!current) return;
+    // Deafening mutes as well: there is no "I hear nothing but keep talking".
+    const selfMute = deaf ? true : current.selfMute;
+    if (bridgeStreaming()) bridgeUpdate({ selfMute, selfDeaf: deaf });
+    else
+      gateway?.setVoiceState({
+        guildId: current.guildId,
+        channelId: current.channelId,
+        selfMute,
+        selfDeaf: deaf,
+      });
+    set({ selfVoice: { ...current, selfMute, selfDeaf: deaf } });
   },
 
   hydrateChannel: async (channelId) => {
@@ -516,13 +668,44 @@ function handleDispatch(
       const data = raw as RawVoiceState & { guild_id?: string };
       if (!data.guild_id || !data.user_id) break;
       const guildId = data.guild_id;
+      /** Set when this update is about the bot, which the bridge needs to see. */
+      let selfVoiceUpdate: unknown = null;
       set((state) => {
         const current = { ...(state.voiceStatesByGuild[guildId] ?? {}) };
         // A null channel_id means the user left voice altogether.
         if (data.channel_id) current[data.user_id!] = toVoiceState(data);
         else delete current[data.user_id!];
-        return { voiceStatesByGuild: { ...state.voiceStatesByGuild, [guildId]: current } };
+
+        const next: Partial<ClientState> = {
+          voiceStatesByGuild: { ...state.voiceStatesByGuild, [guildId]: current },
+        };
+
+        // This is also how a moderator moving or disconnecting the bot reaches
+        // the UI, so Discord's word wins over what this client last asked for.
+        if (data.user_id === state.user?.id) {
+          selfVoiceUpdate = data;
+          // A call being moved onto a fresh bridge instance leaves the channel
+          // for a moment on purpose; that is not the bot hanging up.
+          if (!data.channel_id && resumingVoice()) return next;
+          next.selfVoice = data.channel_id
+            ? {
+                guildId,
+                channelId: data.channel_id,
+                selfMute: Boolean(data.self_mute),
+                selfDeaf: Boolean(data.self_deaf),
+                connecting: false,
+              }
+            : null;
+        }
+        return next;
       });
+      // The bridge's voice connection is built from these two events; they are
+      // forwarded after the store settles rather than from inside the updater.
+      if (selfVoiceUpdate) feedVoiceState(selfVoiceUpdate);
+      break;
+    }
+    case "VOICE_SERVER_UPDATE": {
+      feedVoiceServer(raw);
       break;
     }
     case "GUILD_DELETE": {
@@ -539,6 +722,8 @@ function handleDispatch(
           voiceStatesByGuild: Object.fromEntries(
             Object.entries(state.voiceStatesByGuild).filter(([guildId]) => guildId !== id),
           ),
+          // Leaving the server takes the bot out of its voice channel too.
+          selfVoice: state.selfVoice?.guildId === id ? null : state.selfVoice,
           selectedGuildId: state.selectedGuildId === id ? null : state.selectedGuildId,
         };
       });

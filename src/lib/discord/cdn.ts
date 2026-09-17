@@ -69,3 +69,8 @@ export function guildAcronym(name: string) {
     .join("")
     .slice(0, 3);
 }
+
+/** The audio file behind a soundboard sound, playable straight from the CDN. */
+export function soundboardSoundUrl(soundId: string) {
+  return `${CDN_BASE}/soundboard-sounds/${soundId}`;
+}

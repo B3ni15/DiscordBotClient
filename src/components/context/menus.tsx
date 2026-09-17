@@ -10,7 +10,8 @@ import {
   isThreadChannel,
 } from "@/lib/discord/permissions";
 import { displayName, memberPermissions } from "@/lib/discord/roles";
-import { REASONS } from "@/lib/discord/useGuildPowers";
+import { voiceApi } from "@/lib/discord/voiceApi";
+import { missingPermission, REASONS } from "@/lib/discord/useGuildPowers";
 import {
   isChannelMuted,
   isGuildMuted,
@@ -18,7 +19,7 @@ import {
   setGuildMuted,
 } from "@/lib/notifications/settings";
 import { clearUnread } from "@/lib/notifications/unread";
-import { useClient, type ClientState } from "@/lib/store/client";
+import { isVoiceChannel, useClient, type ClientState } from "@/lib/store/client";
 import { openMenuFor, separator, type MenuItem } from "@/lib/store/contextMenu";
 import { useUI } from "@/lib/store/ui";
 
@@ -75,6 +76,13 @@ function powersFor(guildId: string | null): Powers {
       return highest(self) > highest(member);
     },
   };
+}
+
+/** Reports whatever Discord said about a voice action that did not go through. */
+function runVoiceAction(request: Promise<unknown>, fallback: string) {
+  void request.catch((cause: unknown) =>
+    useUI.getState().toast(cause instanceof Error ? cause.message : fallback, "error"),
+  );
 }
 
 /** A reason string for a locked entry, or undefined when it is allowed. */
@@ -177,6 +185,9 @@ export function channelMenuItems(channel: APIChannel, guildId: string | null): M
   const muted = isChannelMuted(channel.id);
   const name = ("name" in channel ? channel.name : null) ?? channel.id;
   const parentId = "parent_id" in channel ? (channel.parent_id ?? null) : null;
+  const voice = isVoiceChannel(channel);
+  const inThisChannel = powers.state.selfVoice?.channelId === channel.id;
+  const canConnect = powers.canIn(channel, PermissionFlagsBits.Connect);
 
   const items: MenuItem[] = [
     {
@@ -200,8 +211,38 @@ export function channelMenuItems(channel: APIChannel, guildId: string | null): M
       checked: muted,
       onSelect: () => setChannelMuted(channel.id, !muted),
     },
-    separator("s1"),
   ];
+
+  if (voice && guildId) {
+    items.push(
+      inThisChannel
+        ? {
+            type: "item",
+            id: "leave-voice",
+            label: "Leave voice channel",
+            icon: "📴",
+            onSelect: () => powers.state.leaveVoice(),
+          }
+        : {
+            type: "item",
+            id: "join-voice",
+            label: "Join voice channel",
+            icon: "🎙",
+            disabled: !canConnect,
+            reason: lock(canConnect, powers.ready, missingPermission("Connect")),
+            onSelect: () => powers.state.joinVoice(guildId, channel.id),
+          },
+      {
+        type: "item",
+        id: "soundboard",
+        label: "Soundboard…",
+        icon: "🔈",
+        onSelect: () => useUI.getState().togglePanel("soundboard"),
+      },
+    );
+  }
+
+  items.push(separator("s1"));
 
   if (guildId) {
     items.push(
@@ -391,6 +432,13 @@ export function memberMenuItems(
   const canBan = powers.can(PermissionFlagsBits.BanMembers) && outranked && !isSelf;
   const canTimeout = powers.can(PermissionFlagsBits.ModerateMembers) && outranked && !isSelf;
 
+  // Voice moderation only means anything while the member is actually in a
+  // voice channel; Discord rejects it outright otherwise.
+  const voiceState = powers.state.voiceStatesByGuild[guildId]?.[userId];
+  const canMuteVoice = powers.can(PermissionFlagsBits.MuteMembers) && outranked && !!voiceState;
+  const canDeafenVoice = powers.can(PermissionFlagsBits.DeafenMembers) && outranked && !!voiceState;
+  const canMoveVoice = powers.can(PermissionFlagsBits.MoveMembers) && outranked && !!voiceState;
+
   const timedOut =
     member?.communication_disabled_until != null &&
     Date.parse(member.communication_disabled_until) > Date.now();
@@ -482,6 +530,88 @@ export function memberMenuItems(
       onSelect: () => openDialog({ kind: "nickname", guildId, userId }),
     },
     separator("s2"),
+    {
+      type: "toggle",
+      id: "server-mute",
+      label: voiceState?.serverMute ? "Unmute in voice" : "Mute in voice",
+      checked: voiceState?.serverMute ?? false,
+      disabled: !canMuteVoice,
+      reason: lock(
+        canMuteVoice,
+        powers.ready,
+        !voiceState
+          ? REASONS.notInVoice
+          : powers.can(PermissionFlagsBits.MuteMembers)
+            ? REASONS.hierarchy
+            : REASONS.muteMembers,
+      ),
+      onSelect: () =>
+        runVoiceAction(
+          voiceApi.setServerMute(
+            powers.state.getRest(),
+            guildId,
+            userId,
+            !voiceState?.serverMute,
+            "Voice moderation from DisBotClient",
+          ),
+          "Could not change the member's voice mute.",
+        ),
+    },
+    {
+      type: "toggle",
+      id: "server-deafen",
+      label: voiceState?.serverDeaf ? "Undeafen in voice" : "Deafen in voice",
+      checked: voiceState?.serverDeaf ?? false,
+      disabled: !canDeafenVoice,
+      reason: lock(
+        canDeafenVoice,
+        powers.ready,
+        !voiceState
+          ? REASONS.notInVoice
+          : powers.can(PermissionFlagsBits.DeafenMembers)
+            ? REASONS.hierarchy
+            : REASONS.deafenMembers,
+      ),
+      onSelect: () =>
+        runVoiceAction(
+          voiceApi.setServerDeaf(
+            powers.state.getRest(),
+            guildId,
+            userId,
+            !voiceState?.serverDeaf,
+            "Voice moderation from DisBotClient",
+          ),
+          "Could not change the member's voice deafen.",
+        ),
+    },
+    {
+      type: "item",
+      id: "voice-disconnect",
+      label: "Disconnect from voice",
+      icon: "📴",
+      disabled: !canMoveVoice,
+      reason: lock(
+        canMoveVoice,
+        powers.ready,
+        !voiceState
+          ? REASONS.notInVoice
+          : powers.can(PermissionFlagsBits.MoveMembers)
+            ? REASONS.hierarchy
+            : REASONS.moveMembers,
+      ),
+      onSelect: () =>
+        runVoiceAction(
+          voiceApi.moveMember(
+            powers.state.getRest(),
+            guildId,
+            userId,
+            null,
+            "Disconnected from DisBotClient",
+          ),
+          "Could not disconnect the member.",
+        ),
+    },
+    separator("s2b"),
     {
       type: "item",
       id: "timeout",

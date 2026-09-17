@@ -8,6 +8,15 @@ const nextConfig: NextConfig = {
    * build. better-sqlite3 is only ever reached in local development.
    */
   serverExternalPackages: [
+    /*
+     * The voice worker's stack: native Opus and DAVE builds, and libraries that
+     * load them at runtime. Bundling them breaks the .node lookups.
+     */
+    "@discordjs/voice",
+    "@discordjs/opus",
+    "@snazzah/davey",
+    "opusscript",
+    "ws",
     "@prisma/client",
     "@prisma/adapter-d1",
     "@prisma/adapter-better-sqlite3",
