@@ -27,6 +27,7 @@ import {
 } from "@/lib/discord/selfPresence";
 import { RestClient } from "@/lib/discord/rest";
 import { rememberDM, type DMUserInfo } from "@/components/nav/dmStore";
+import { useAccount } from "@/lib/store/account";
 import { useUI } from "@/lib/store/ui";
 
 const TOKEN_KEY = "disbotclient:token";
@@ -204,6 +205,19 @@ export const useClient = create<ClientState>((set, get) => ({
 
     localStorage.setItem(TOKEN_KEY, normalizedToken);
     set({ token: normalizedToken, user });
+
+    // An unlocked vault remembers the bot, so it can be switched back to from
+    // any of this account's browsers.
+    const account = useAccount.getState();
+    if (account.status === "unlocked") {
+      void account.saveBot({
+        id: user.id,
+        name: user.global_name ?? user.username,
+        avatar: user.avatar ?? null,
+        discriminator: user.discriminator ?? null,
+        token: normalizedToken,
+      });
+    }
 
     const presence = loadSelfPresence();
     set({ selfPresence: presence });

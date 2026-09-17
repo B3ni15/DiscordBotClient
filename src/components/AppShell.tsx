@@ -4,7 +4,6 @@ import { DirectMessages } from "@/components/nav/DirectMessages";
 import { GuildDialogs } from "@/components/guild/GuildDialogs";
 import { channelMenuItems, guildMenuItems } from "@/components/context/menus";
 import { ContextMenuHost } from "@/components/ui/ContextMenu";
-import { Toasts } from "@/components/ui/Toasts";
 import { useGuildPowers } from "@/lib/discord/useGuildPowers";
 import { useNotifications } from "@/lib/notifications/useNotifications";
 import { useUrlSync } from "@/lib/nav/useUrlSync";
@@ -80,7 +79,6 @@ export function AppShell() {
       {starting && <ConnectingOverlay />}
       <ContextMenuHost />
       <GuildDialogs />
-      <Toasts />
     </div>
   );
 }

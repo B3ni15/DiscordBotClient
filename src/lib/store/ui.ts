@@ -21,7 +21,16 @@ export type Dialog =
   | { kind: "roles"; guildId: string }
   | { kind: "memberRoles"; guildId: string; userId: string }
   | { kind: "nickname"; guildId: string; userId: string }
-  | { kind: "moderate"; guildId: string; userId: string; action: "kick" | "ban" | "timeout" };
+  | { kind: "moderate"; guildId: string; userId: string; action: "kick" | "ban" | "timeout" }
+  /** Sets the encrypted vault up for the first time. */
+  | { kind: "accountSetup" }
+  /** Opens the vault on this browser. */
+  | { kind: "accountUnlock" }
+  /** Passkeys, recovery code and passphrase. */
+  | { kind: "accountSecurity" }
+  | { kind: "accountDelete" }
+  /** Signs in as another bot and remembers it. */
+  | { kind: "addBot" };
 
 export interface Toast {
   id: number;

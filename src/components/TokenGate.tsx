@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { BotAvatar } from "@/components/account/BotSwitcher";
 import { Spinner } from "@/components/ui/Spinner";
+import { useAccount } from "@/lib/store/account";
 import { useClient } from "@/lib/store/client";
+import { useUI } from "@/lib/store/ui";
 
 const REPO_URL = "https://github.com/B3ni15/DiscordBotClient";
 
@@ -10,6 +13,9 @@ const REPO_URL = "https://github.com/B3ni15/DiscordBotClient";
 export function TokenGate() {
   const login = useClient((state) => state.login);
   const error = useClient((state) => state.error);
+  const accountStatus = useAccount((state) => state.status);
+  const bots = useAccount((state) => state.bots);
+  const openDialog = useUI((state) => state.openDialog);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -29,6 +35,49 @@ export function TokenGate() {
         <p className="mt-2 text-center text-sm text-muted">
           Sign in with a bot token to use it like a Discord client.
         </p>
+
+        {accountStatus === "unlocked" && bots.length > 0 && (
+          <div className="mt-6">
+            <h2 className="pb-2 text-xs font-bold tracking-wide text-muted uppercase">
+              Your bots
+            </h2>
+            <ul className="flex flex-col gap-1">
+              {bots.map((bot) => (
+                <li key={bot.id}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setBusy(true);
+                      void login(bot.token).finally(() => setBusy(false));
+                    }}
+                    className="flex w-full items-center gap-3 rounded-[3px] bg-ink px-3 py-2 text-left transition-colors hover:bg-hover disabled:opacity-60"
+                  >
+                    <BotAvatar bot={bot} size={24} />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-bright">
+                      {bot.name}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted">Sign in</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-center text-xs text-muted">or use another token</p>
+          </div>
+        )}
+
+        {(accountStatus === "locked" || accountStatus === "needsSetup") && (
+          <button
+            type="button"
+            onClick={() =>
+              openDialog({ kind: accountStatus === "locked" ? "accountUnlock" : "accountSetup" })
+            }
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-[3px] bg-panel-alt px-3 py-2.5 text-sm font-medium text-bright transition-colors hover:bg-raised"
+          >
+            <span aria-hidden>🔑</span>
+            {accountStatus === "locked" ? "Unlock your saved bots" : "Turn on sync"}
+          </button>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-8">
           <label
@@ -68,6 +117,22 @@ export function TokenGate() {
           </p>
         )}
 
+        {accountStatus === "signedOut" && (
+          <div className="mt-6 border-t border-line pt-6">
+            <a
+              href="/api/auth/discord"
+              className="flex w-full items-center justify-center gap-2 rounded-[3px] bg-panel-alt px-3 py-2.5 text-sm font-medium text-bright transition-colors hover:bg-raised"
+            >
+              <span aria-hidden>🔗</span>
+              Sign in with Discord
+            </a>
+            <p className="mt-2 text-center text-xs text-muted">
+              Optional. Keeps your bots and DM list across devices, encrypted so the server cannot
+              read them.
+            </p>
+          </div>
+        )}
+
         <div className="mt-8 space-y-3 border-t border-line pt-6 text-xs leading-relaxed text-muted">
           <p>
             Find the token on the Bot tab of the{" "}
@@ -86,12 +151,16 @@ export function TokenGate() {
           </p>
 
           <p>
-            <span className="font-semibold text-text">No data is stored.</span> There is no account
-            and no database: your token, your settings and the list of DMs you opened stay in this
-            browser’s <span className="font-mono">localStorage</span>, and signing out erases them.
-            Requests go through a same-origin proxy that only forwards them to Discord — it keeps
-            no copy of the token, the messages or anything else. The hosted site counts anonymous
-            page views (Vercel Web Analytics); none of your Discord data is part of that.
+            <span className="font-semibold text-text">Nothing readable is stored.</span> Without
+            signing in there is no account at all: your token, your settings and the list of DMs
+            you opened stay in this browser’s{" "}
+            <span className="font-mono">localStorage</span>, and signing out erases them. Sign in
+            with Discord and those same things are also kept on the server — but encrypted in
+            this browser first, with a key held by your passkey or recovery code, so the database
+            holds ciphertext nobody can read. Deleting the account erases all of it. Requests to
+            Discord go through a same-origin proxy that keeps no copy of anything. The hosted site
+            counts anonymous page views (Vercel Web Analytics); none of your Discord data is part
+            of that.
           </p>
 
           <p>

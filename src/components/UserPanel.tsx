@@ -1,5 +1,6 @@
 "use client";
 
+import { useBotSwitcherMenu } from "@/components/account/BotSwitcher";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { userAvatarUrl } from "@/lib/discord/cdn";
@@ -19,6 +20,7 @@ const STATUS_TEXT: Record<string, string> = {
 
 export function UserPanel() {
   const user = useClient((state) => state.user);
+  const openSwitcher = useBotSwitcherMenu();
   const status = useClient((state) => state.status);
   const logout = useClient((state) => state.logout);
   const togglePanel = useUI((state) => state.togglePanel);
@@ -46,7 +48,14 @@ export function UserPanel() {
   return (
     <div className="flex h-[52px] shrink-0 items-center gap-2 bg-panel-alt px-2">
       {user ? (
-        <div className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1">
+        <button
+          type="button"
+          onClick={openSwitcher}
+          onContextMenu={openSwitcher}
+          title="Switch bot"
+          aria-label={`Signed in as ${user.global_name ?? user.username}. Switch bot.`}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left transition-colors hover:bg-hover"
+        >
           <span className="relative shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={userAvatarUrl(user, 64)} alt="" className="h-8 w-8 rounded-full" />
@@ -68,7 +77,7 @@ export function UserPanel() {
               {subtitle}
             </span>
           </span>
-        </div>
+        </button>
       ) : (
         <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1">
           <span className="skeleton h-8 w-8 rounded-full" aria-hidden />
