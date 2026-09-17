@@ -8,12 +8,14 @@ import { MessageToolbar } from "@/components/actions/MessageToolbar";
 import { ReactionBar } from "@/components/actions/ReactionBar";
 import { channelMenuItems, memberMenuItems, messageMenuItems } from "@/components/context/menus";
 import { MessageContent } from "@/components/message/MessageContent";
+import { UserCard } from "@/components/members/UserCard";
 import { ThreadCreate } from "@/components/nav/ThreadCreate";
 import { BotTag } from "@/components/ui/BotTag";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { userAvatarUrl } from "@/lib/discord/cdn";
+import { displayName as memberDisplayName, memberColorHex } from "@/lib/discord/roles";
 import { useClient } from "@/lib/store/client";
 import { openMenuFor } from "@/lib/store/contextMenu";
 import { useUI } from "@/lib/store/ui";
@@ -62,6 +64,7 @@ function ChannelView({ channelId }: { channelId: string }) {
   const [replyTo, setReplyTo] = useState<APIMessage | null>(null);
   const [creatingThread, setCreatingThread] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [openUserId, setOpenUserId] = useState<string | null>(null);
   const selectChannel = useClient((state) => state.selectChannel);
 
   // Keep the newest message in view unless the reader scrolled up.
@@ -191,6 +194,7 @@ function ChannelView({ channelId }: { channelId: string }) {
                   onReply={setReplyTo}
                   onEdit={(target) => setEditingId(target.id)}
                   onEditDone={() => setEditingId(null)}
+                  onOpenProfile={guildId ? setOpenUserId : undefined}
                 />
               ))}
             </ol>
@@ -206,6 +210,23 @@ function ChannelView({ channelId }: { channelId: string }) {
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
       />
+
+      {guildId && openUserId && (
+        <div className="fixed inset-0 z-40 flex animate-fade-in items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close card"
+            onClick={() => setOpenUserId(null)}
+            className="absolute inset-0 bg-black/70"
+          />
+          <UserCard
+            guildId={guildId}
+            userId={openUserId}
+            onClose={() => setOpenUserId(null)}
+            className="relative z-10 max-h-[80vh] animate-pop-in"
+          />
+        </div>
+      )}
     </section>
   );
 }
@@ -305,6 +326,7 @@ interface MessageRowProps {
   onReply: (message: APIMessage) => void;
   onEdit: (message: APIMessage) => void;
   onEditDone: () => void;
+  onOpenProfile?: (userId: string) => void;
 }
 
 const TIME_FORMAT: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
@@ -318,8 +340,13 @@ function MessageRow({
   onReply,
   onEdit,
   onEditDone,
+  onOpenProfile,
 }: MessageRowProps) {
   const guildId = useClient((state) => state.selectedGuildId);
+  const member = useClient((state) =>
+    guildId ? state.membersByGuild[guildId]?.[message.author.id] : undefined,
+  );
+  const roles = useClient((state) => (guildId ? state.guilds[guildId]?.roles : undefined));
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   /** Discord's message right-click, with the same actions as the hover toolbar. */
@@ -341,6 +368,11 @@ function MessageRow({
     openMenuFor(event, message.author.username, memberMenuItems(guildId, message.author.id));
   }
 
+  /** Left-click the author opens their profile card, matching real Discord. */
+  function openAuthorCard() {
+    onOpenProfile?.(message.author.id);
+  }
+
   const grouped =
     previous !== undefined &&
     previous.author.id === message.author.id &&
@@ -353,7 +385,10 @@ function MessageRow({
 
   // The gateway attaches a partial member object that APIMessage does not declare.
   const nick = (message as APIMessage & { member?: { nick?: string | null } }).member?.nick;
-  const displayName = nick ?? message.author.global_name ?? message.author.username;
+  const displayName = member
+    ? memberDisplayName(member)
+    : (nick ?? message.author.global_name ?? message.author.username);
+  const nameColor = member && roles ? memberColorHex(member, roles) : null;
 
   const body = editing ? (
     <MessageEditor message={message} onDone={onEditDone} />
@@ -410,17 +445,21 @@ function MessageRow({
             <img
               src={userAvatarUrl(message.author, 80)}
               alt=""
+              onClick={openAuthorCard}
               onContextMenu={openAuthorMenu}
-              className="mt-0.5 h-10 w-10 shrink-0 rounded-full"
+              className="mt-0.5 h-10 w-10 shrink-0 cursor-pointer rounded-full"
             />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
-                <span
+                <button
+                  type="button"
+                  onClick={openAuthorCard}
                   onContextMenu={openAuthorMenu}
-                  className="text-[15px] leading-tight font-medium text-bright"
+                  className="text-[15px] leading-tight font-medium text-bright hover:underline"
+                  style={nameColor ? { color: nameColor } : undefined}
                 >
                   {displayName}
-                </span>
+                </button>
                 <BotTag user={message.author} />
                 <time
                   dateTime={message.timestamp}
