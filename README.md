@@ -225,10 +225,17 @@ controls:
 
 - **Mic on / off** — your microphone, straight into the channel. Self-mute keeps
   it open and sends silence, so unmuting is instant.
+- **A speaking indicator**: the bot gets the same green ring in the channel list
+  as anyone else who is talking, and the mic button fills with the level of what
+  is actually being sent — the quickest answer to "is anything coming out of me?"
 - A live count of where the audio actually gets to — packets leaving this
-  browser, arriving at the worker, handed to Discord, and coming back from the
-  channel. "Nobody can hear me" has several very different causes, and the four
-  numbers tell them apart instead of leaving you to guess.
+  browser, arriving at the worker, put on the wire to Discord, and coming back
+  from the channel. "Nobody can hear me" has several very different causes, and
+  the four numbers tell them apart instead of leaving you to guess.
+- Calls survive a worker going away: the page reconnects for as long as it
+  takes, rebuilds the call, and watches for one that has quietly died — a socket
+  that is open in name only, or audio going in with nothing coming out — and
+  starts it again by itself.
 - **Play file** — any audio the browser can decode (MP3, OGG, WAV, FLAC, M4A),
   with an optional loop and a "hear it here" monitor. No length limit.
 - **Mic and output volume**, and **deafen**, which silences this browser too.

@@ -42,7 +42,9 @@ export function StreamControls() {
   const monitor = useBridge((state) => state.monitor);
   const nowPlaying = useBridge((state) => state.nowPlaying);
   const resuming = useBridge((state) => state.resuming);
-  const speaking = useBridge((state) => state.speaking);
+  const speaking = useBridge((state) => state.selfSpeaking);
+  const level = useBridge((state) => state.selfLevel);
+  const others = useBridge((state) => state.speaking);
   const selfVoice = useClient((state) => state.selfVoice);
   const togglePanel = useUI((state) => state.togglePanel);
   const toast = useUI((state) => state.toast);
@@ -117,12 +119,25 @@ export function StreamControls() {
           disabled={busy || !selfVoice}
           aria-pressed={micEnabled}
           title={micEnabled ? "Close the microphone" : "Open the microphone"}
-          className={`flex h-7 flex-1 items-center justify-center gap-1.5 rounded text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-            micEnabled ? "bg-online/20 text-online hover:bg-online/30" : "bg-raised text-muted hover:bg-hover hover:text-bright"
-          }`}
+          className={`relative flex h-7 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+            micEnabled
+              ? "bg-online/20 text-online hover:bg-online/30"
+              : "bg-raised text-muted hover:bg-hover hover:text-bright"
+          } ${speaking ? "ring-1 ring-online" : ""}`}
         >
-          {micEnabled ? <MicIcon size={13} /> : <MicOffIcon size={13} />}
-          {micEnabled ? "Mic on" : "Mic off"}
+          {/*
+            The level of what is actually being sent, behind the label: the
+            quickest possible answer to "is anything coming out of me?".
+          */}
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 bg-online/25 transition-[width] duration-75"
+            style={{ width: `${Math.min(100, Math.round(level * 180))}%` }}
+          />
+          <span className="relative flex items-center gap-1.5">
+            {micEnabled ? <MicIcon size={13} /> : <MicOffIcon size={13} />}
+            {micEnabled ? "Mic on" : "Mic off"}
+          </span>
         </button>
 
         <button
@@ -204,10 +219,15 @@ export function StreamControls() {
         onChange={(value) => setOutputVolume(value)}
       />
 
-      <p className="mt-1 px-1 text-[10px] leading-snug text-faint">
-        {speaking.length > 0
-          ? `Hearing ${speaking.length} ${speaking.length === 1 ? "person" : "people"} right now.`
-          : "Nobody is talking."}
+      <p className="mt-1 px-1 text-[10px] leading-snug">
+        <span className={speaking ? "font-medium text-online" : "text-faint"}>
+          {speaking ? "You are talking." : "You are quiet."}
+        </span>{" "}
+        <span className="text-faint">
+          {others.length > 0
+            ? `Hearing ${others.length} ${others.length === 1 ? "person" : "people"}.`
+            : "Nobody else is talking."}
+        </span>
       </p>
 
       <FlowReadout />
@@ -234,7 +254,9 @@ function FlowReadout() {
       : flow.received === 0
         ? "Audio is leaving this browser but not reaching the bridge."
         : flow.delivered === 0
-          ? "The bridge is receiving audio but not handing it to Discord."
+          ? flow.refused > 0
+            ? `The bridge cannot send: its voice connection is ${flow.connection}.`
+            : "The bridge is receiving audio but not putting it on the wire."
           : null;
 
   return (
@@ -248,7 +270,8 @@ function FlowReadout() {
       <p className="mt-0.5 text-center font-mono text-[9px] text-faint">
         {encoding === "opus" ? "opus from this browser" : "pcm, encoded by the bridge"}
         {flow.dropped > 0 ? ` · ${flow.dropped}/s dropped` : ""}
-        {flow.player !== "playing" ? ` · player ${flow.player}` : ""}
+        {flow.underruns > 0 ? ` · ${flow.underruns}/s starved` : ""}
+        {flow.connection !== "ready" ? ` · link ${flow.connection}` : ""}
       </p>
       {problem && <p className="mt-1 text-[10px] leading-snug text-amber">{problem}</p>}
     </div>

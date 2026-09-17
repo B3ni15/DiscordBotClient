@@ -30,6 +30,8 @@ export interface EngineHandlers {
   onFileEnded?: () => void;
   /** Which of the two the page settled on, once it knows. */
   onEncodingChange?: (encoding: Encoding) => void;
+  /** How loud the audio leaving this browser is, 0 to 1, a few times a second. */
+  onLevel?: (level: number) => void;
 }
 
 /** Whether this browser encodes the audio or the bridge has to. */
@@ -50,6 +52,8 @@ const ENCODER_CONFIG = {
 
 /** Beyond this the encoder is behind; dropping beats letting latency grow. */
 const MAX_ENCODER_QUEUE = 10;
+/** Frames between level reports: 50 a second is far more than an eye needs. */
+const LEVEL_EVERY_FRAMES = 4;
 
 export interface MicOptions {
   deviceId?: string;
@@ -76,6 +80,7 @@ export class VoiceAudioEngine {
   #encoder: AudioEncoder | null = null;
   /** Microseconds, as WebCodecs counts them. */
   #encoderTimestamp = 0;
+  #framesSinceLevel = 0;
 
   #micStream: MediaStream | null = null;
   #micSource: MediaStreamAudioSourceNode | null = null;
@@ -182,8 +187,20 @@ export class VoiceAudioEngine {
     this.#handlers.onEncodingChange?.("pcm");
   }
 
+  /**
+   * Rebuilds the encoder after a failure, e.g. when a call is resumed. Without
+   * this, one bad frame would leave the page sending PCM for good.
+   */
+  async restartEncoder(): Promise<void> {
+    if (this.#encoder?.state === "configured") return;
+    this.#dropEncoder();
+    await this.#startEncoder();
+    if (this.#encoder) this.#handlers.onEncodingChange?.("opus");
+  }
+
   /** One 20 ms block out of the worklet, encoded here if this browser can. */
   #handleFrame(pcm: Int16Array) {
+    this.#reportLevel(pcm);
     const encoder = this.#encoder;
     if (encoder?.state === "configured") {
       // A backed-up encoder means the audio would arrive late anyway.
@@ -208,6 +225,26 @@ export class VoiceAudioEngine {
       }
     }
     this.#handlers.onFrame(pcm);
+  }
+
+  /**
+   * The loudest sample of the block, which is what drives the speaking
+   * indicator. It measures the audio actually being sent, so a muted bot reads
+   * as silent — exactly as everyone else in the channel experiences it.
+   */
+  #reportLevel(pcm: Int16Array) {
+    if (!this.#handlers.onLevel) return;
+    this.#framesSinceLevel += 1;
+    if (this.#framesSinceLevel < LEVEL_EVERY_FRAMES) return;
+    this.#framesSinceLevel = 0;
+
+    let peak = 0;
+    // Every fourth sample is plenty to find the peak of a 20 ms block.
+    for (let index = 0; index < pcm.length; index += 4) {
+      const value = pcm[index] < 0 ? -pcm[index] : pcm[index];
+      if (value > peak) peak = value;
+    }
+    this.#handlers.onLevel(peak / 32768);
   }
 
   /** Opens or closes the microphone; the graph keeps running either way. */

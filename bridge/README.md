@@ -86,6 +86,22 @@ audio into 20 ms blocks, WebCodecs encodes them, the page sends them over the
 socket, and the bridge reports how many it received. Needs the app running
 (`npm run dev` in the repository root) and Playwright installed.
 
+## Sending audio
+
+Packets go to the voice connection directly, on a 20 ms clock of this worker's
+own (`src/transmitter.mjs`), rather than through `@discordjs/voice`'s audio
+player. A player is built for files: it pulls from a stream whenever it is
+ready, treats a momentary gap as the end of the audio, and reports success
+whether or not anything reached the socket. A live microphone wants the
+opposite — a small jitter buffer, a steady cadence, a tail of silence when the
+talking stops, and a count of what actually went out.
+
+Packets are also copied on their way into the queue. They arrive as views into a
+socket buffer, and Node pools those: several messages share one allocation, so a
+packet held for even 20 ms can have its bytes overwritten by the next one. The
+result is audio that leaves looking perfectly healthy and arrives as nothing at
+all.
+
 ## Protocol
 
 JSON text frames for control, binary frames for audio, each with one leading
@@ -111,6 +127,6 @@ tag byte.
 | `gateway` | A payload the browser must send on its gateway. |
 | `status` | `idle`, `connecting`, `ready` or `reconnecting`. |
 | `speaking` | Someone started or stopped talking. |
-| `stats` | Every two seconds: frames received, packets handed to Discord, packets arriving from the channel, drops, and what the audio player is doing. The client shows these next to its own counts, which is what makes "nobody can hear me" diagnosable rather than a guess. |
+| `stats` | Every two seconds: frames received, packets actually put on the wire, packets refused by a connection that was not ready, starved turns of the 20 ms clock, packets arriving from the channel, drops, and the voice connection's state. The client shows these next to its own counts, which is what makes "nobody can hear me" diagnosable rather than a guess. |
 | `expiring` | Only from the hosted worker: this instance is about to reach its time limit, so reconnect now. |
 | `error` | Something went wrong, in words. |

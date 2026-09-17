@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node src/index.mjs",
-    "test": "node test/smoke.mjs && node test/send-path.mjs",
+    "test": "node test/smoke.mjs && node test/transmit.mjs",
     "test:browser": "node test/browser-to-bridge.mjs"
   },
   "dependencies": {

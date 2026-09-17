@@ -30,11 +30,28 @@ const AUDIO_IN = 0x02;
 const AUDIO_OUT_OPUS = 0x03;
 /** Beyond this the network is the bottleneck; dropping beats growing a queue. */
 const MAX_SOCKET_BACKLOG = 200_000;
-const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000];
+/** Backoff between attempts; the last entry repeats for as long as it takes. */
+const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
 /** Our own close code for "this worker is about to expire, come straight back". */
 const EXPIRED_CLOSE_CODE = 4002;
 /** How long Discord is given to forget the old voice session before rejoining. */
-const RESUME_GAP_MS = 400;
+const RESUME_GAP_MS = 600;
+/** How long a rebuilt call is given to come up before it is tried again. */
+const RESUME_READY_TIMEOUT_MS = 12_000;
+const RESUME_ATTEMPTS = 4;
+/**
+ * The worker reports every two seconds. Silence for this long means the socket
+ * is open in name only — the case that leaves a call quietly dead, because a
+ * half-open WebSocket never fires a close event.
+ */
+const STATS_SILENCE_MS = 12_000;
+const WATCHDOG_INTERVAL_MS = 4_000;
+/** Consecutive reports with audio going in and nothing coming out. */
+const STALLED_REPORTS_BEFORE_RESET = 3;
+/** Peak level at which the bot counts as talking. */
+const SPEAKING_THRESHOLD = 0.03;
+/** How long the speaking indicator stays on after the last loud frame. */
+const SPEAKING_HOLD_MS = 350;
 
 export type BridgeStatus = "off" | "connecting" | "connected" | "error";
 /** What the worker reports about the Discord voice connection itself. */
@@ -63,6 +80,10 @@ export interface BridgeState {
   speaking: string[];
   /** Whether this browser encodes the audio or the worker has to. */
   encoding: Encoding;
+  /** True while this bot's own audio is loud enough to count as talking. */
+  selfSpeaking: boolean;
+  /** Peak level of the audio leaving this browser, 0 to 1. */
+  selfLevel: number;
   /**
    * What each side has actually seen lately. The point of showing it is that
    * "nobody can hear me" has two very different causes, and this tells them
@@ -80,8 +101,12 @@ export interface BridgeState {
     incoming: number;
     /** Dropped on either side, a second. */
     dropped: number;
-    /** What the worker's audio player is doing. */
-    player: string;
+    /** Packets the voice connection refused because it was not ready. */
+    refused: number;
+    /** Turns of the worker's 20 ms clock that found nothing to send. */
+    underruns: number;
+    /** What the worker's voice connection is doing. */
+    connection: string;
   } | null;
   nowPlaying: { name: string; loop: boolean } | null;
 }
@@ -101,6 +126,8 @@ export const useBridge = create<BridgeState>(() => ({
   monitor: false,
   speaking: [],
   encoding: "pcm",
+  selfSpeaking: false,
+  selfLevel: 0,
   flow: null,
   nowPlaying: null,
 }));
@@ -121,6 +148,12 @@ let micWasOpen = false;
 /** Counted since the last report from the worker, to show both ends at once. */
 let sentPackets = 0;
 let sentDropped = 0;
+/** When the worker last said anything at all, for the watchdog below. */
+let lastReportAt = 0;
+let stalledReports = 0;
+let watchdog: ReturnType<typeof setInterval> | null = null;
+let resumeInFlight = false;
+let speakingTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * How the worker reaches Discord's gateway: it cannot, so it asks this page to
@@ -240,6 +273,9 @@ export async function connectBridge(url?: string): Promise<void> {
   socket.onopen = () => {
     everOpened = true;
     reconnectAttempt = 0;
+    lastReportAt = Date.now();
+    stalledReports = 0;
+    startWatchdog();
     useBridge.setState({ status: "connected", error: null });
     // A call that was interrupted by an expiring worker picks up here, as does
     // one that was already running before this worker was reached at all.
@@ -266,14 +302,17 @@ export async function connectBridge(url?: string): Promise<void> {
     // an ordinary HTTP error, which the WebSocket API hides; it is worth asking.
     if (!everOpened) void explainFailure(target);
     // A worker that warned it was expiring is expected back at once; anything
-    // else backs off.
-    const delay = event.code === EXPIRED_CLOSE_CODE ? 0 : RECONNECT_DELAYS_MS[reconnectAttempt];
-    if (delay === undefined) {
-      useBridge.setState({ status: "error", error: "Lost the voice bridge." });
-      return;
-    }
+    // else backs off. There is no attempt limit: a hosted worker is replaced
+    // every few minutes by design, and giving up would end the call for good.
+    const delay =
+      event.code === EXPIRED_CLOSE_CODE
+        ? 0
+        : RECONNECT_DELAYS_MS[Math.min(reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
     reconnectAttempt += 1;
-    useBridge.setState({ status: "connecting" });
+    useBridge.setState({
+      status: "connecting",
+      ...(reconnectAttempt > 2 ? { error: "Lost the voice bridge; still trying." } : {}),
+    });
     setTimeout(() => {
       if (!closedByUser) void connectBridge(target);
     }, delay);
@@ -284,6 +323,7 @@ export async function disconnectBridge(): Promise<void> {
   closedByUser = true;
   lastJoin = null;
   micWasOpen = false;
+  stopWatchdog();
   socket?.close(1000);
   socket = null;
   useBridge.setState({ status: "off", voice: "idle", speaking: [], nowPlaying: null, micEnabled: false });
@@ -318,29 +358,101 @@ export function bridgeJoin(
  * reporting it as having left.
  */
 async function resumeCall(): Promise<void> {
-  const join = lastJoin;
-  if (!join) return;
-
+  if (resumeInFlight) return;
+  resumeInFlight = true;
   useBridge.setState({ resuming: true, voice: "connecting" });
-  sendGatewayPayload?.({
-    op: 4,
-    d: {
-      guild_id: join.guildId,
-      channel_id: null,
-      self_mute: join.selfMute,
-      self_deaf: join.selfDeaf,
-    },
-  });
-  await new Promise((resolve) => setTimeout(resolve, RESUME_GAP_MS));
 
-  // The user may have hung up while this was waiting.
-  if (!lastJoin || socket?.readyState !== WebSocket.OPEN) {
+  try {
+    for (let attempt = 0; attempt < RESUME_ATTEMPTS; attempt++) {
+      const join = lastJoin;
+      // The user may have hung up while this was working.
+      if (!join || socket?.readyState !== WebSocket.OPEN) return;
+
+      sendGatewayPayload?.({
+        op: 4,
+        d: {
+          guild_id: join.guildId,
+          channel_id: null,
+          self_mute: join.selfMute,
+          self_deaf: join.selfDeaf,
+        },
+      });
+      // Each attempt gives Discord a little longer to forget the old session,
+      // which is what makes it hand out a new voice server at all.
+      await wait(RESUME_GAP_MS * (attempt + 1));
+      if (!lastJoin || socket?.readyState !== WebSocket.OPEN) return;
+
+      send({ t: "join", ...lastJoin });
+      if (await waitForReady(RESUME_READY_TIMEOUT_MS)) {
+        useBridge.setState({ error: null });
+        await engine?.restartEncoder().catch(() => {});
+        if (micWasOpen) await setMicrophone(true).catch(() => {});
+        return;
+      }
+    }
+    // Every attempt timed out. The watchdog keeps trying, but the user should
+    // know why the bot has gone quiet rather than guess.
+    useBridge.setState({ error: "Could not put the call back together. Rejoin the channel to retry." });
+  } finally {
+    resumeInFlight = false;
     useBridge.setState({ resuming: false });
-    return;
   }
-  send({ t: "join", ...lastJoin });
-  useBridge.setState({ resuming: false });
-  if (micWasOpen) await setMicrophone(true).catch(() => {});
+}
+
+/** Resolves once the worker reports a live voice connection, or times out. */
+function waitForReady(timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (useBridge.getState().voice === "ready") {
+      resolve(true);
+      return;
+    }
+    const timer = setTimeout(() => {
+      unsubscribe();
+      resolve(false);
+    }, timeoutMs);
+    const unsubscribe = useBridge.subscribe((state) => {
+      if (state.voice !== "ready") return;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(true);
+    });
+  });
+}
+
+/**
+ * Watches for a call that has quietly died.
+ *
+ * Two things kill one without any error: a socket that is open in name only,
+ * where no close event ever arrives, and a worker whose voice connection went
+ * away underneath it. Both show up as the worker's reports stopping or its
+ * counters flatlining, and both are fixed the same way — start again.
+ */
+function startWatchdog() {
+  stopWatchdog();
+  watchdog = setInterval(() => {
+    if (!lastJoin || closedByUser) return;
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    if (Date.now() - lastReportAt < STATS_SILENCE_MS) return;
+    // Silence from a socket that claims to be open: reconnect rather than wait.
+    forceReconnect("the voice bridge stopped answering");
+  }, WATCHDOG_INTERVAL_MS);
+}
+
+function stopWatchdog() {
+  if (watchdog) clearInterval(watchdog);
+  watchdog = null;
+}
+
+/** Drops the socket so the normal reconnect and resume path runs. */
+function forceReconnect(reason: string) {
+  lastReportAt = Date.now();
+  stalledReports = 0;
+  useBridge.setState({ error: `Restarting the audio: ${reason}.` });
+  socket?.close(EXPIRED_CLOSE_CODE, "restarting");
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Mute, deafen or move without rebuilding the voice connection. */
@@ -371,7 +483,15 @@ export function bridgeLeave() {
   // The microphone is released rather than left open: a browser that keeps
   // showing a recording indicator outside a call is alarming, and rightly so.
   void engine?.setMicrophone(false).catch(() => {});
-  useBridge.setState({ voice: "idle", speaking: [], nowPlaying: null, micEnabled: false, flow: null });
+  useBridge.setState({
+    voice: "idle",
+    speaking: [],
+    nowPlaying: null,
+    micEnabled: false,
+    flow: null,
+    selfSpeaking: false,
+    selfLevel: 0,
+  });
 }
 
 /** The bot's own voice state, straight off this page's gateway. */
@@ -446,6 +566,7 @@ async function ensureEngine(): Promise<VoiceAudioEngine> {
   const audio = new VoiceAudioEngine({
     onPacket: sendOpusPacket,
     onFrame: sendPcmFrame,
+    onLevel: reportSelfLevel,
     onFileEnded: () => useBridge.setState({ nowPlaying: null }),
     onEncodingChange: (encoding) => useBridge.setState({ encoding }),
   });
@@ -471,6 +592,24 @@ function sendOpusPacket(packet: Uint8Array) {
 /** The same 20 ms as PCM, for a browser that has no encoder of its own. */
 function sendPcmFrame(pcm: Int16Array) {
   sendTagged(AUDIO_OUT, new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+}
+
+/**
+ * Turns the level of the outgoing audio into the same "is talking" state the
+ * channel list shows for everyone else, with a short hold so it does not
+ * flicker between syllables.
+ */
+function reportSelfLevel(level: number) {
+  const state = useBridge.getState();
+  if (Math.abs(level - state.selfLevel) > 0.01) useBridge.setState({ selfLevel: level });
+  if (level < SPEAKING_THRESHOLD) return;
+
+  if (!state.selfSpeaking) useBridge.setState({ selfSpeaking: true });
+  if (speakingTimer) clearTimeout(speakingTimer);
+  speakingTimer = setTimeout(() => {
+    useBridge.setState({ selfSpeaking: false, selfLevel: 0 });
+    speakingTimer = null;
+  }, SPEAKING_HOLD_MS);
 }
 
 function sendTagged(tag: number, body: Uint8Array) {
@@ -521,7 +660,11 @@ function handleMessage(data: string | ArrayBuffer) {
     case "status": {
       const state = message.state as BridgeVoiceState;
       useBridge.setState({ voice: state, ...(state === "idle" ? { speaking: [] } : {}) });
-      if (state === "idle") engine?.clearIncoming();
+      if (state !== "idle") break;
+      engine?.clearIncoming();
+      // The worker's voice connection went away while a call was meant to be
+      // running: put it back rather than leaving the bot silently seated.
+      if (lastJoin && !resumeInFlight && socket?.readyState === WebSocket.OPEN) void resumeCall();
       break;
     }
     case "speaking": {
@@ -536,6 +679,7 @@ function handleMessage(data: string | ArrayBuffer) {
       break;
     }
     case "stats": {
+      lastReportAt = Date.now();
       const perSecond = (value: unknown) =>
         Math.round((Number(value) || 0) / ((Number(message.overMs) || 1_000) / 1_000));
       useBridge.setState({
@@ -545,9 +689,20 @@ function handleMessage(data: string | ArrayBuffer) {
           delivered: perSecond(message.packetsOut),
           incoming: perSecond(message.packetsIn),
           dropped: perSecond(message.dropped) + Math.round(sentDropped),
-          player: String(message.player ?? "none"),
+          refused: perSecond(message.refused),
+          underruns: perSecond(message.underruns),
+          connection: String(message.connection ?? "none"),
         },
       });
+      // Audio going in with nothing coming out the other side means the call
+      // is up but useless; a few reports of that and it is rebuilt.
+      const flow = useBridge.getState().flow;
+      const stalled = Boolean(flow && flow.sent > 0 && (flow.received === 0 || flow.delivered === 0));
+      stalledReports = stalled ? stalledReports + 1 : 0;
+      if (stalledReports >= STALLED_REPORTS_BEFORE_RESET) {
+        forceReconnect("audio stopped reaching Discord");
+      }
+
       sentPackets = 0;
       sentDropped = 0;
       break;

@@ -1,18 +1,12 @@
-import { Readable } from "node:stream";
 import {
   EndBehaviorType,
-  NoSubscriberBehavior,
-  StreamType,
   VoiceConnectionStatus,
-  createAudioPlayer,
-  createAudioResource,
   entersState,
   joinVoiceChannel,
 } from "@discordjs/voice";
 import { FRAME_BYTES, decodeOutgoingAudio, encodeIncomingAudio } from "./protocol.mjs";
+import { Transmitter } from "./transmitter.mjs";
 
-/** How much unsent audio may pile up before frames are dropped instead of delayed. */
-const MAX_QUEUED_FRAMES = 10;
 /** How often the page is told what this side is actually seeing. */
 const STATS_INTERVAL_MS = 2_000;
 /** Stop feeding a browser that is not keeping up rather than growing its socket buffer. */
@@ -37,9 +31,8 @@ export class Session {
   /** The callbacks @discordjs/voice gave us to feed gateway events into. */
   #adapter = null;
   #connection = null;
-  #player = null;
-  /** Opus packets on their way to Discord, one per 20 ms. */
-  #outgoing = null;
+  /** The 20 ms clock that puts this browser's audio on the wire. */
+  #transmitter = null;
   /** Only built for browsers that send PCM because they cannot encode Opus. */
   #encoder = null;
   /** Half-filled PCM, when a browser's frames do not line up with 20 ms. */
@@ -47,7 +40,7 @@ export class Session {
   #decoders = new Map();
   #statsTimer = null;
   /** What this side has seen since the last report, for the page to display. */
-  #counts = { framesIn: 0, packetsOut: 0, dropped: 0, packetsIn: 0 };
+  #counts = { framesIn: 0, packetsIn: 0 };
 
   constructor(socket, { log, opus, id }) {
     this.#socket = socket;
@@ -171,25 +164,12 @@ export class Session {
   }
 
   /**
-   * The browser's audio, on its way out.
-   *
-   * The stream carries finished Opus packets, which is what the voice
-   * connection wants: with `StreamType.Opus` @discordjs/voice builds no
-   * transcoding pipeline at all, so nothing here depends on it finding an
-   * encoder of its own. One long-lived stream means muting never has to build a
-   * new resource — the page simply sends quieter audio.
+   * The browser's audio, on its way out: straight to the voice connection on a
+   * clock of its own. `Transmitter` explains why that is not an audio player.
    */
   #startSending(connection) {
-    this.#outgoing = new Readable({ objectMode: true, read() {} });
-    this.#player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } });
-    this.#player.on("error", (cause) => {
-      this.#log(`player error: ${cause.message}`);
-      // Worth saying out loud: this is the failure that makes a bot look
-      // connected while nobody can hear it.
-      this.#send({ t: "error", message: `Audio could not be sent: ${cause.message}` });
-    });
-    this.#player.play(createAudioResource(this.#outgoing, { inputType: StreamType.Opus }));
-    connection.subscribe(this.#player);
+    this.#transmitter = new Transmitter(connection);
+    this.#transmitter.start();
   }
 
   /** @param {{ kind: "opus" | "pcm", payload: Buffer }} frame */
@@ -197,28 +177,20 @@ export class Session {
     // Counted before anything else: audio arriving with nowhere to go is
     // exactly the case the page needs to be able to see.
     this.#counts.framesIn += 1;
-    if (!this.#outgoing) return;
-
-    // Late audio is worse than missing audio: drop rather than queue.
-    if (this.#outgoing.readableLength > MAX_QUEUED_FRAMES) {
-      this.#counts.dropped += 1;
-      return;
-    }
+    const transmitter = this.#transmitter;
+    if (!transmitter) return;
 
     if (frame.kind === "opus") {
-      this.#outgoing.push(frame.payload);
-      this.#counts.packetsOut += 1;
+      transmitter.push(frame.payload);
       return;
     }
 
     for (const block of this.#blocks(frame.payload)) {
       try {
         this.#encoder ??= this.#opus.createEncoder();
-        this.#outgoing.push(this.#encoder.encode(block));
-        this.#counts.packetsOut += 1;
+        transmitter.push(this.#encoder.encode(block));
       } catch (cause) {
         this.#log(`could not encode audio: ${cause.message}`);
-        this.#counts.dropped += 1;
         return;
       }
     }
@@ -247,13 +219,18 @@ export class Session {
     clearInterval(this.#statsTimer);
     this.#statsTimer = setInterval(() => {
       const counts = this.#counts;
-      this.#counts = { framesIn: 0, packetsOut: 0, dropped: 0, packetsIn: 0 };
+      this.#counts = { framesIn: 0, packetsIn: 0 };
+      const sending = this.#transmitter?.takeCounts();
       this.#send({
         t: "stats",
         overMs: STATS_INTERVAL_MS,
         ...counts,
-        player: this.#player?.state.status ?? "none",
-        queued: this.#outgoing?.readableLength ?? 0,
+        packetsOut: sending?.sent ?? 0,
+        refused: sending?.refused ?? 0,
+        dropped: sending?.dropped ?? 0,
+        underruns: sending?.underruns ?? 0,
+        connection: this.#connection?.state.status ?? "none",
+        queued: this.#transmitter?.queued ?? 0,
       });
     }, STATS_INTERVAL_MS);
   }
@@ -306,8 +283,8 @@ export class Session {
   /** Tears the Discord side down; the browser socket itself stays open. */
   close(reason) {
     if (this.#connection) this.#log(`voice connection closed (${reason})`);
-    this.#player?.stop(true);
-    this.#outgoing?.push(null);
+    this.#transmitter?.stop();
+    this.#transmitter = null;
     this.#encoder?.destroy();
     this.#encoder = null;
     this.#pending = null;
@@ -319,8 +296,6 @@ export class Session {
       // Already destroyed by @discordjs/voice itself.
     }
     this.#connection = null;
-    this.#player = null;
-    this.#outgoing = null;
   }
 
   /** Called when the browser goes away for good. */

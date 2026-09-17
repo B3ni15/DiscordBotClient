@@ -153,9 +153,13 @@ function Occupant({
   const user = member?.user;
   const name = member ? displayName(member) : state.userId;
   const color = member ? memberColorHex(member, roles) : null;
+  const selfId = useClient((client) => client.user?.id);
   // Only the bridge can tell who is actually talking: it is the side that
-  // receives the audio.
-  const talking = useBridge((bridge) => bridge.speaking.includes(state.userId));
+  // receives the audio. Nobody sends the bot its own voice back, so for the bot
+  // the measure is the level of what this browser is sending.
+  const talking = useBridge((bridge) =>
+    state.userId === selfId ? bridge.selfSpeaking : bridge.speaking.includes(state.userId),
+  );
 
   const muted = state.selfMute || state.serverMute;
   const deafened = state.selfDeaf || state.serverDeaf;
