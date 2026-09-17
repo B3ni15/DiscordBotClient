@@ -6,13 +6,13 @@ import { PermissionFlagsBits } from "discord-api-types/v10";
 import { Spinner } from "@/components/ui/Spinner";
 import { StatusDot, STATUS_LABEL } from "@/components/ui/StatusDot";
 import { api } from "@/lib/discord/api";
-import { memberAvatarUrl, userAvatarUrl, userBannerUrl } from "@/lib/discord/cdn";
 import {
-  activityLabel,
-  customStatus,
-  detailedActivities,
-  deviceLabel,
-} from "@/lib/discord/presence";
+  avatarDecorationUrl,
+  memberAvatarUrl,
+  userAvatarUrl,
+  userBannerUrl,
+} from "@/lib/discord/cdn";
+import { customStatus, detailedActivities, deviceLabel } from "@/lib/discord/presence";
 import {
   displayName,
   memberColorHex,
@@ -21,8 +21,15 @@ import {
   roleColorHex,
   snowflakeTimestamp,
 } from "@/lib/discord/roles";
+import { ActivityCard } from "@/components/members/ActivityCard";
+import { BadgeRow } from "@/components/members/BadgeRow";
 import { BotTag } from "@/components/ui/BotTag";
-import { accentColorHex, userBadges } from "@/lib/discord/userFlags";
+import {
+  EXTRA_BADGES,
+  accentColorHex,
+  userBadges,
+  type UserBadge,
+} from "@/lib/discord/userFlags";
 import { OFFLINE_PRESENCE, useClient } from "@/lib/store/client";
 
 export interface UserCardProps {
@@ -46,6 +53,15 @@ function formatDate(value: number | string | null | undefined): string {
   if (Number.isNaN(date.getTime())) return "Unknown";
   return new Intl.DateTimeFormat("en-US", DATE_FORMAT).format(date);
 }
+
+/** Discord heads each activity with what the person is doing, not "Activity". */
+const ACTIVITY_HEADING: Record<number, string> = {
+  0: "Playing",
+  1: "Streaming",
+  2: "Listening to",
+  3: "Watching",
+  5: "Competing in",
+};
 
 /** Permissions worth calling out on a profile, highest impact first. */
 const NOTABLE_PERMISSIONS: Array<[bigint, string]> = [
@@ -113,10 +129,16 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
   // The REST account carries public_flags; the member's user object usually
   // does too, so badges show before that request lands.
   const flagged = account ?? user;
-  const badges = userBadges(flagged);
+  // Boosting is a guild fact rather than an account flag, so it is added here
+  // rather than being read off public_flags with the rest.
+  const badges: UserBadge[] = [
+    ...userBadges(flagged),
+    ...(member?.premium_since ? [EXTRA_BADGES.serverBooster as UserBadge] : []),
+  ];
   const avatar =
     memberAvatarUrl(guildId, userId, member?.avatar, 128) ??
     (user ? userAvatarUrl(user, 128) : undefined);
+  const decoration = avatarDecorationUrl(account?.avatar_decoration_data);
 
   const status = customStatus(presence);
   const activities = detailedActivities(presence);
@@ -214,6 +236,16 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
           ) : (
             <span className="block h-20 w-20 rounded-full border-[6px] border-panel-alt bg-raised" />
           )}
+          {decoration && (
+            // The frame sits over the avatar and must not swallow the clicks.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={decoration}
+              alt=""
+              aria-hidden
+              className="pointer-events-none absolute -top-[7px] -left-[7px] h-[94px] w-[94px] max-w-none"
+            />
+          )}
           {hasPresence && (
             <StatusDot
               status={presence.status}
@@ -244,23 +276,15 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
             )}
           </p>
 
-          {badges.length > 0 && (
-            <Section title={`Badges — ${badges.length}`}>
-              <ul className="flex flex-col gap-1">
-                {badges.map((badge) => (
-                  <li key={badge.label} className="flex items-start gap-2">
-                    <span aria-hidden className="text-sm leading-tight">
-                      {badge.glyph}
-                    </span>
-                    <span className="min-w-0 flex-1 leading-tight">
-                      <span className="block text-xs font-semibold text-text">{badge.label}</span>
-                      <span className="block text-[11px] text-muted">{badge.description}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
+          <div className="mt-2 border-t border-line pt-2">
+            <BadgeRow badges={badges} />
+            <p
+              className="mt-1.5 text-[10px] leading-snug text-faint"
+              title="Bios, Nitro and quest badges come from the user-profile endpoint, which only user accounts may call."
+            >
+              Bios and Nitro badges are not visible to bot tokens.
+            </p>
+          </div>
 
           {status && (
             <p className="mt-2 border-t border-line pt-2 text-sm break-words text-text">{status}</p>
@@ -274,23 +298,16 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
             </p>
           )}
 
-          {activities.length > 0 && (
-            <Section title="Activity">
-              <ul className="flex flex-col gap-1">
-                {activities.map((activity, index) => (
-                  <li key={`${activity.name}-${index}`} className="text-xs text-text">
-                    <span className="font-semibold">{activityLabel(activity)}</span>
-                    {activity.details && (
-                      <span className="block text-muted">{activity.details}</span>
-                    )}
-                    {activity.state && activity.state !== activity.details && (
-                      <span className="block text-muted">{activity.state}</span>
-                    )}
-                  </li>
-                ))}
+          {activities.map((activity, index) => (
+            <Section
+              key={activity.id ?? `${activity.name}-${index}`}
+              title={ACTIVITY_HEADING[activity.type] ?? "Activity"}
+            >
+              <ul className="flex flex-col gap-3">
+                <ActivityCard activity={activity} />
               </ul>
             </Section>
-          )}
+          ))}
 
           <Section title="Member since">
             <div className="grid grid-cols-2 gap-3">

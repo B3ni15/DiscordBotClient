@@ -82,8 +82,9 @@ terms of service, and this client does not support it.
   itself cannot be joined (see limits)
 - Member list grouped by hoisted role, split into online and offline, with
   status dots, custom statuses and what everyone is playing
-- User card with badges, banner, presence, join and account dates, roles and
-  the permissions that matter
+- User card with badges shown as Discord's own icons (named on hover), avatar
+  decoration, banner, presence, rich activity cards with artwork and an
+  elapsed timer, join and account dates, roles and the permissions that matter
 
 **Bot tooling**
 - Slash command management: list, create, edit and delete global and
@@ -100,6 +101,9 @@ These come from the bot token, not from this client:
 - No server-side message search, so search falls back to loaded history
 - The bot only sees servers it has been invited to
 - No presence (online/offline) unless the `PRESENCE INTENT` is enabled
+- No profile bios, and no Nitro or quest badges: those come from the
+  user-profile endpoint, which only user accounts may call. Everything in
+  `public_flags` is shown, plus the server-booster badge
 - Voice channels are shown, and so is who is in them, but the client cannot
   join a voice stream — see below
 

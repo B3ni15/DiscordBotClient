@@ -30,12 +30,29 @@ import { useUI } from "@/lib/store/ui";
 const TOKEN_KEY = "disbotclient:token";
 
 /** One activity line of a presence, e.g. "Playing Minecraft". */
+/** The artwork an activity publishes, as raw asset keys. */
+export interface ActivityAssets {
+  largeImage?: string | null;
+  largeText?: string | null;
+  smallImage?: string | null;
+  smallText?: string | null;
+}
+
 export interface PresenceActivity {
   name: string;
   /** Discord activity type: 0 playing, 1 streaming, 2 listening, 3 watching, 4 custom, 5 competing. */
   type: number;
   state?: string | null;
   details?: string | null;
+  /** Needed to resolve `assets` keys that are application asset ids. */
+  applicationId?: string | null;
+  url?: string | null;
+  assets?: ActivityAssets;
+  /** Epoch ms; drives the "elapsed" or "left" counter Discord shows. */
+  startedAt?: number | null;
+  endsAt?: number | null;
+  /** Stable key for React lists: an activity has no id of its own. */
+  id?: string | null;
 }
 
 /** Everything the gateway tells us about where a user is and what they are doing. */
@@ -671,7 +688,22 @@ function voiceStateMap(states: unknown[] | undefined): Record<string, VoiceState
 interface RawPresence {
   user?: { id?: string };
   status?: string;
-  activities?: Array<{ name?: string; type?: number; state?: string | null; details?: string | null }>;
+  activities?: Array<{
+    id?: string;
+    name?: string;
+    type?: number;
+    state?: string | null;
+    details?: string | null;
+    application_id?: string | null;
+    url?: string | null;
+    assets?: {
+      large_image?: string | null;
+      large_text?: string | null;
+      small_image?: string | null;
+      small_text?: string | null;
+    };
+    timestamps?: { start?: number | null; end?: number | null };
+  }>;
   client_status?: { desktop?: string; mobile?: string; web?: string };
 }
 
@@ -685,6 +717,19 @@ function toPresence(raw: RawPresence): Presence {
         type: activity.type ?? 0,
         state: activity.state ?? null,
         details: activity.details ?? null,
+        applicationId: activity.application_id ?? null,
+        url: activity.url ?? null,
+        assets: activity.assets
+          ? {
+              largeImage: activity.assets.large_image ?? null,
+              largeText: activity.assets.large_text ?? null,
+              smallImage: activity.assets.small_image ?? null,
+              smallText: activity.assets.small_text ?? null,
+            }
+          : undefined,
+        startedAt: activity.timestamps?.start ?? null,
+        endsAt: activity.timestamps?.end ?? null,
+        id: activity.id ?? null,
       })),
     clientStatus: raw.client_status ?? {},
   };

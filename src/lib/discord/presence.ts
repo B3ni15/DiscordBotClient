@@ -1,3 +1,4 @@
+import { CDN_BASE } from "./constants";
 import type { Presence, PresenceActivity } from "@/lib/store/client";
 
 /** Discord's activity types; 4 is the custom status, which has no verb. */
@@ -51,4 +52,48 @@ export function deviceLabel(presence: Presence | undefined): string | null {
   if (status.mobile) devices.push("Mobile");
   if (status.web) devices.push("Web");
   return devices.length > 0 ? devices.join(", ") : null;
+}
+
+/**
+ * Turns an activity asset key into something an `<img>` can load.
+ *
+ * Discord hands these out in several shapes: a bare snowflake is an asset of
+ * the application itself, `spotify:` points at Spotify's CDN, and the `mp:`
+ * prefix is a proxied external URL.
+ */
+export function activityAssetUrl(
+  activity: PresenceActivity,
+  which: "large" | "small",
+  size = 160,
+): string | null {
+  const key = which === "large" ? activity.assets?.largeImage : activity.assets?.smallImage;
+  if (!key) return null;
+
+  if (key.startsWith("spotify:")) {
+    return `https://i.scdn.co/image/${key.slice("spotify:".length)}`;
+  }
+  if (key.startsWith("mp:")) {
+    return `https://media.discordapp.net/${key.slice("mp:".length)}`;
+  }
+  if (/^https?:\/\//.test(key)) return key;
+  if (!activity.applicationId) return null;
+  return `${CDN_BASE}/app-assets/${activity.applicationId}/${key}.png?size=${size}`;
+}
+
+/** The hover text Discord puts on an activity's artwork. */
+export function activityAssetText(
+  activity: PresenceActivity,
+  which: "large" | "small",
+): string | null {
+  return (which === "large" ? activity.assets?.largeText : activity.assets?.smallText) ?? null;
+}
+
+/** `3:01`, or `1:02:03` once it passes an hour — the counter on a Discord activity. */
+export function formatElapsed(milliseconds: number): string {
+  const total = Math.max(0, Math.floor(milliseconds / 1000));
+  const seconds = total % 60;
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3600);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
 }

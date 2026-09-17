@@ -38,6 +38,18 @@ export function userBannerUrl(
   return `${CDN_BASE}/banners/${user.id}/${user.banner}.${ext}?size=${size}`;
 }
 
+/**
+ * The decorative frame some accounts wear around their avatar. `passthrough`
+ * keeps the animated original rather than a flattened still.
+ */
+export function avatarDecorationUrl(
+  decoration: { asset?: string } | null | undefined,
+  size = 160,
+): string | null {
+  if (!decoration?.asset) return null;
+  return `${CDN_BASE}/avatar-decoration-presets/${decoration.asset}.png?size=${size}&passthrough=true`;
+}
+
 export function guildIconUrl(guild: { id: string; icon: string | null }, size = 128) {
   if (!guild.icon) return null;
   const ext = guild.icon.startsWith("a_") ? "gif" : "webp";

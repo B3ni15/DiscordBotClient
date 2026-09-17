@@ -154,7 +154,8 @@ export function PresenceEditor() {
           <span className="block text-sm text-text">Show as on mobile</span>
           <span className="block text-[11px] text-muted">
             Puts the phone icon on the status dot. Reconnects the gateway, because Discord reads
-            the device from the handshake.
+            the device from the handshake, and the icon only appears while the bot is not
+            invisible.
           </span>
         </span>
       </label>

@@ -92,10 +92,14 @@ export function toGatewayPresence(presence: SelfPresence): GatewayPresencePayloa
   };
 }
 
-/** Identify properties decide whether Discord shows the phone icon. */
+/**
+ * Identify properties decide whether Discord shows the phone icon: it is
+ * `browser` being the Android client string that does it, matched here by the
+ * os and device a real phone reports.
+ */
 export function identifyProperties(mobile: boolean) {
   return mobile
-    ? { os: "android", browser: "Discord Android", device: "Discord Android" }
+    ? { os: "android", browser: "Discord Android", device: "android" }
     : { os: "browser", browser: "disbotclient", device: "disbotclient" };
 }
 

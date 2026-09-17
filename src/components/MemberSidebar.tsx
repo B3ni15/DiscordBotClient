@@ -43,9 +43,33 @@ export function MemberSidebar() {
   const guildId = useClient((state) => state.selectedGuildId);
   const guild = useClient((state) => (guildId ? state.guilds[guildId] : undefined));
   const members = useClient((state) => (guildId ? state.membersByGuild[guildId] : undefined));
-  const presences = useClient((state) =>
+  const rawPresences = useClient((state) =>
     guildId ? (state.presenceByGuild[guildId] ?? EMPTY_PRESENCES) : EMPTY_PRESENCES,
   );
+  const selfId = useClient((state) => state.user?.id);
+  const selfPresence = useClient((state) => state.selfPresence);
+
+  /*
+   * Discord sends no PRESENCE_UPDATE for your own account, so the bot's own row
+   * would keep whatever it had when the guild arrived. Overlay what this client
+   * actually published for it.
+   */
+  const presences = useMemo(() => {
+    if (!selfId) return rawPresences;
+    const status = selfPresence.status === "invisible" ? "offline" : selfPresence.status;
+    const name = selfPresence.activityName.trim();
+    return {
+      ...rawPresences,
+      [selfId]: {
+        status,
+        activities:
+          selfPresence.activityType !== null && name
+            ? [{ name, type: selfPresence.activityType }]
+            : [],
+        clientStatus: selfPresence.mobile ? { mobile: status } : { desktop: status },
+      },
+    };
+  }, [rawPresences, selfId, selfPresence]);
   const hasPresence = useClient((state) => state.presenceEnabled);
   const getGateway = useClient((state) => state.getGateway);
   const status = useClient((state) => state.status);
