@@ -2,6 +2,7 @@
 
 import { DirectMessages } from "@/components/nav/DirectMessages";
 import { useNotifications } from "@/lib/notifications/useNotifications";
+import { useUrlSync } from "@/lib/nav/useUrlSync";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
 import { ChannelSidebar } from "./ChannelSidebar";
@@ -21,6 +22,7 @@ export function AppShell() {
   const selectChannel = useClient((state) => state.selectChannel);
 
   useNotifications();
+  useUrlSync();
 
   // Only cover the app on the very first handshake; a later reconnect keeps the
   // layout up and reports itself in the status bar instead.
