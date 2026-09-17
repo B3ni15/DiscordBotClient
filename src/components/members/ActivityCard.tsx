@@ -2,11 +2,17 @@
 
 import { useEffect, useState } from "react";
 import {
+  detectableAppIconUrl,
+  ensureDetectableAppsLoaded,
+  useDetectableAppsLoaded,
+} from "@/lib/discord/detectableApps";
+import {
   activityAssetText,
   activityAssetUrl,
   activityLabel,
   formatElapsed,
 } from "@/lib/discord/presence";
+import { useClient } from "@/lib/store/client";
 import type { PresenceActivity } from "@/lib/store/client";
 
 /** Ticks once a second so the counter under an activity keeps moving. */
@@ -26,7 +32,18 @@ function useNow(active: boolean): number {
  * lines beside it, and the elapsed time underneath.
  */
 export function ActivityCard({ activity }: { activity: PresenceActivity }) {
-  const large = activityAssetUrl(activity, "large");
+  const getRest = useClient((state) => state.getRest);
+  useDetectableAppsLoaded();
+
+  useEffect(() => {
+    ensureDetectableAppsLoaded(getRest());
+  }, [getRest]);
+
+  // A rich-presence asset wins when the activity sent one; otherwise fall back to
+  // the box art Discord shows for a locally-detected game, keyed off the app id.
+  const large =
+    activityAssetUrl(activity, "large") ??
+    (activity.applicationId ? detectableAppIconUrl(activity.applicationId) : null);
   const small = activityAssetUrl(activity, "small");
   const largeText = activityAssetText(activity, "large");
   const smallText = activityAssetText(activity, "small");
