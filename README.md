@@ -61,7 +61,7 @@ It runs entirely from the browser, connects directly to the Discord Gateway, and
 | 🛠️ | **Bot tooling** | Manage slash commands and handle incoming interactions |
 | 🎙️ | **Voice** | Join voice channels, mute/deafen the bot, moderate other members |
 | 🔈 | **Soundboard** | Upload MP3/OGG sounds and play them into the channel the bot sits in |
-| 🎧 | **Live audio** | Microphone, audio files and listening, through the local voice bridge |
+| 🎧 | **Live audio** | Microphone, audio files and listening, through a voice worker the deployment hosts |
 | 🔐 | **Privacy-first** | Tokens and local preferences remain in the browser |
 
 ---
@@ -218,18 +218,10 @@ right-click menu, permissions and role hierarchy permitting.
 ### Live audio: the voice bridge
 
 A web page cannot open the UDP socket Discord's voice servers exchange Opus
-frames over. The [`bridge/`](bridge) worker opens it instead, and with it
-running the bot has a real microphone, plays audio files of any length, and
-hears the channel:
-
-```bash
-cd bridge
-npm install
-npm start
-```
-
-Paste the address it prints (secret included) into **Settings → Voice bridge**,
-press **Connect**, and the voice strip grows its live controls:
+frames over. A small worker opens it instead — and **the deployment hosts that
+worker itself**, at `/api/voice/bridge`, so there is nothing to install or
+start. The client connects to it on sign-in, and the voice strip grows its live
+controls:
 
 - **Mic on / off** — your microphone, straight into the channel. Self-mute keeps
   it open and sends silence, so unmuting is instant.
@@ -243,10 +235,52 @@ What crosses the wire to the worker is plain PCM and the two voice handshake
 events. The **bot token never leaves the browser**: Discord's voice protocol
 authenticates with the voice token from `VOICE_SERVER_UPDATE`, and the worker
 has no gateway connection of its own — when it needs an `op 4` sent, it hands
-the payload back to this page to send. [`bridge/README.md`](bridge/README.md)
-covers the flags, the security model and the protocol.
+the payload back to this page to send.
 
-Without the bridge the client still joins voice channels, mutes and moderates,
+#### Running it on Vercel
+
+The route runs on the Node runtime and uses Vercel's WebSocket support, which
+needs **Fluid compute** enabled for the project (the default for projects
+created since April 2025). Nothing else to configure.
+
+One limit comes with it: a WebSocket is pinned to one function instance and
+closes when that instance reaches its maximum duration — 300 seconds on every
+plan, more on Pro and Enterprise. The worker warns the page 20 seconds before
+that, and the call is moved onto a fresh instance: the bot briefly leaves the
+channel and comes straight back, because Discord only issues a voice server
+when a member joins one. You hear a gap of about a second every few minutes.
+Raising `maxDuration` in
+[`src/app/api/voice/bridge/route.ts`](src/app/api/voice/bridge/route.ts) on a
+plan that allows it makes those gaps rarer.
+
+Whether a given deployment can carry voice at all comes down to whether its
+functions may open a UDP socket. **Settings → Voice bridge → "Can this
+deployment carry voice?"** answers that from the deployment itself: it sends a
+real datagram and waits for the reply, and reports the Opus, voice and
+encryption libraries alongside it.
+
+| Environment variable | Meaning |
+| --- | --- |
+| `VOICE_BRIDGE_ALLOWED_ORIGINS` | Extra origins allowed to use the hosted worker, comma separated. By default only pages from the same deployment may, so another site cannot quietly spend your compute. `*` allows any. |
+
+#### Running it yourself instead
+
+`next dev` and self-hosted Node servers cannot upgrade WebSocket connections, so
+local development uses the standalone worker — as does anyone who would rather
+not have a call interrupted every few minutes:
+
+```bash
+cd bridge
+npm install
+npm start
+```
+
+Paste the address it prints (secret included) into **Settings → Voice bridge →
+Use a worker of your own**. It is the same worker with the same protocol and no
+duration limit. [`bridge/README.md`](bridge/README.md) covers its flags, its
+security model and the protocol itself.
+
+Without any bridge the client still joins voice channels, mutes and moderates,
 and plays soundboard sounds; it just carries no audio of its own.
 
 ### Short sounds without the bridge: the soundboard
@@ -453,7 +487,7 @@ These limitations primarily come from Discord's bot API:
 - **Presence requires the Presence Intent.**
 - **No user bios:** bot accounts cannot use the user-profile endpoint in the same way as user accounts.
 - **No Nitro / Quest-style user badges:** these are not exposed through the bot-accessible profile data.
-- **Live audio needs the local bridge:** a browser cannot open Discord's voice UDP socket, so the microphone, file streaming and listening run through the small worker in [`bridge/`](bridge). Everything else, the soundboard included, works from the browser alone.
+- **Live audio runs through a worker, not the page:** a browser cannot open Discord's voice UDP socket. The deployment hosts that worker itself, at the cost of a short gap whenever a serverless function reaches its time limit; [`bridge/`](bridge) is the same worker without that limit. Everything else, the soundboard included, works from the browser alone.
 
 ---
 

@@ -37,6 +37,7 @@ import {
   feedVoiceServer,
   feedVoiceState,
   loadBridgeSettings,
+  resumingVoice,
   setGatewaySender,
   useBridge,
 } from "@/lib/voice/bridge";
@@ -669,6 +670,9 @@ function handleDispatch(
         // the UI, so Discord's word wins over what this client last asked for.
         if (data.user_id === state.user?.id) {
           selfVoiceUpdate = data;
+          // A call being moved onto a fresh bridge instance leaves the channel
+          // for a moment on purpose; that is not the bot hanging up.
+          if (!data.channel_id && resumingVoice()) return next;
           next.selfVoice = data.channel_id
             ? {
                 guildId,

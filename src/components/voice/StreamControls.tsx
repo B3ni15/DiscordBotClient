@@ -22,6 +22,9 @@ const VOICE_LABELS: Record<string, string> = {
   reconnecting: "Reconnecting the audio…",
 };
 
+/** What the strip says while a hosted worker hands the call to a new instance. */
+const RESUMING_LABEL = "Moving the call to a fresh worker…";
+
 /**
  * Microphone, file playback and listening — the half of voice that needs the
  * bridge, folded into the voice strip.
@@ -38,6 +41,7 @@ export function StreamControls() {
   const outputVolume = useBridge((state) => state.outputVolume);
   const monitor = useBridge((state) => state.monitor);
   const nowPlaying = useBridge((state) => state.nowPlaying);
+  const resuming = useBridge((state) => state.resuming);
   const speaking = useBridge((state) => state.speaking);
   const selfVoice = useClient((state) => state.selfVoice);
   const togglePanel = useUI((state) => state.togglePanel);
@@ -51,19 +55,15 @@ export function StreamControls() {
     return (
       <div className="mt-1.5 px-1">
         <p className="text-[10px] leading-snug text-faint">
-          No live audio: a browser cannot stream voice on its own. Run the voice bridge to give the
-          bot a microphone and ears.
+          No live audio yet: the microphone, file playback and listening all run through the voice
+          bridge.
         </p>
         <button
           type="button"
           onClick={() => (url ? void connectBridge() : togglePanel("settings"))}
           className="mt-1 text-[11px] text-accent hover:underline"
         >
-          {url
-            ? status === "connecting"
-              ? "Connecting to the bridge…"
-              : "Connect the bridge"
-            : "Set up the voice bridge"}
+          {status === "connecting" ? "Connecting to the bridge…" : "Connect the bridge"}
         </button>
       </div>
     );
@@ -105,7 +105,9 @@ export function StreamControls() {
           aria-hidden
           className={`h-1.5 w-1.5 rounded-full ${live ? "bg-online" : "bg-amber"}`}
         />
-        <span className={live ? "text-online" : "text-muted"}>{VOICE_LABELS[voice] ?? voice}</span>
+        <span className={live ? "text-online" : "text-muted"}>
+          {resuming ? RESUMING_LABEL : (VOICE_LABELS[voice] ?? voice)}
+        </span>
       </p>
 
       <div className="flex items-center gap-1">

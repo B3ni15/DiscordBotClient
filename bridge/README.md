@@ -6,6 +6,13 @@ DisbotClient runs entirely in the browser, and a browser cannot open the UDP
 socket Discord's voice servers exchange Opus frames over. This process opens it
 instead. Everything else stays in the browser.
 
+**You do not have to run this.** The app hosts the same worker at
+`/api/voice/bridge`, and the client uses it by default. Run this one when you
+want a call that is never interrupted — a serverless function drops its
+WebSocket when it reaches its maximum duration, so a hosted call is resumed
+every few minutes — or when you are developing locally, where `next dev` cannot
+upgrade WebSocket connections at all.
+
 ## What it does and does not see
 
 - **It never sees the bot token.** Discord's voice protocol authenticates with

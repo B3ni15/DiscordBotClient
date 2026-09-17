@@ -6,12 +6,17 @@ import { VoiceAudioEngine } from "./audioEngine";
 /**
  * The client half of the voice bridge.
  *
- * The bridge is a small worker the user runs next to the browser (see
- * `bridge/` in this repository). It exists for one reason: a page cannot open
+ * The bridge is a small worker that exists for one reason: a page cannot open
  * the UDP socket Discord's voice servers exchange Opus frames over. Everything
  * else stays here — the bot token, the gateway connection and all the audio
  * handling — and the worker is handed only the voice handshake payloads it has
  * to relay, plus the sound itself.
+ *
+ * By default that worker is this same deployment, at `/api/voice/bridge`, so
+ * nothing has to be installed or started to talk. A deployment's functions run
+ * for a limited time, so the hosted worker warns the page before its instance
+ * expires and the call is resumed on a new one; pointing the address below at a
+ * self-hosted `bridge/` removes that limit.
  *
  * So the bot really does speak and really does hear; what crosses the wire to
  * the worker is plain PCM, and the worker sends `op 4` back through this page's
@@ -25,6 +30,10 @@ const AUDIO_IN = 0x02;
 /** Beyond this the network is the bottleneck; dropping beats growing a queue. */
 const MAX_SOCKET_BACKLOG = 200_000;
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000];
+/** Our own close code for "this worker is about to expire, come straight back". */
+const EXPIRED_CLOSE_CODE = 4002;
+/** How long Discord is given to forget the old voice session before rejoining. */
+const RESUME_GAP_MS = 400;
 
 export type BridgeStatus = "off" | "connecting" | "connected" | "error";
 /** What the worker reports about the Discord voice connection itself. */
@@ -40,6 +49,10 @@ export interface BridgeState {
   error: string | null;
   /** Which Opus library the worker found; useful when a native build is missing. */
   opus: string | null;
+  /** True while the worker in use is this deployment rather than a self-hosted one. */
+  hosted: boolean;
+  /** Set while a call is being moved onto a fresh worker instance. */
+  resuming: boolean;
   micEnabled: boolean;
   micVolume: number;
   outputVolume: number;
@@ -57,6 +70,8 @@ export const useBridge = create<BridgeState>(() => ({
   voice: "idle",
   error: null,
   opus: null,
+  hosted: true,
+  resuming: false,
   micEnabled: false,
   micVolume: 1,
   outputVolume: 1,
@@ -71,6 +86,11 @@ let engine: VoiceAudioEngine | null = null;
 let closedByUser = false;
 let reconnectAttempt = 0;
 let sendGatewayPayload: ((payload: unknown) => void) | null = null;
+/** The call to put back together if the worker's instance goes away. */
+let lastJoin: { guildId: string; channelId: string; selfMute: boolean; selfDeaf: boolean } | null =
+  null;
+/** Whether the microphone was open before the worker went away. */
+let micWasOpen = false;
 
 /**
  * How the worker reaches Discord's gateway: it cannot, so it asks this page to
@@ -85,16 +105,36 @@ export function bridgeConnected(): boolean {
   return socket?.readyState === WebSocket.OPEN;
 }
 
+/**
+ * While a call is being moved to a fresh worker instance the bot briefly leaves
+ * the channel, because Discord only hands out a new voice server when it
+ * (re-)joins one. The client store reads this so the UI does not flicker.
+ */
+export function resumingVoice(): boolean {
+  return useBridge.getState().resuming;
+}
+
+/** This deployment's own worker: no setup, and no address to paste anywhere. */
+export function hostedBridgeUrl(): string {
+  if (typeof location === "undefined") return "";
+  return `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/voice/bridge`;
+}
+
 // Settings -------------------------------------------------------------------
 
 export function loadBridgeSettings() {
+  // Nothing stored yet means the hosted worker, connected automatically: voice
+  // should work on a fresh browser without anyone configuring anything.
+  useBridge.setState({ url: hostedBridgeUrl(), autoConnect: true, hosted: true });
   try {
     const stored = localStorage.getItem(SETTINGS_KEY);
     if (!stored) return;
     const parsed = JSON.parse(stored) as Partial<BridgeState>;
+    const url = typeof parsed.url === "string" && parsed.url ? parsed.url : hostedBridgeUrl();
     useBridge.setState({
-      url: typeof parsed.url === "string" ? parsed.url : "",
-      autoConnect: parsed.autoConnect === true,
+      url,
+      hosted: url === hostedBridgeUrl(),
+      autoConnect: parsed.autoConnect !== false,
       micVolume: clamp(parsed.micVolume ?? 1),
       outputVolume: clamp(parsed.outputVolume ?? 1, 2),
       monitor: parsed.monitor === true,
@@ -106,6 +146,9 @@ export function loadBridgeSettings() {
 
 export function saveBridgeSettings(settings: Partial<BridgeState>) {
   useBridge.setState(settings);
+  if (settings.url !== undefined) {
+    useBridge.setState({ hosted: settings.url === hostedBridgeUrl() });
+  }
   const { url, autoConnect, micVolume, outputVolume, monitor } = useBridge.getState();
   try {
     localStorage.setItem(
@@ -130,17 +173,10 @@ export async function connectBridge(url?: string): Promise<void> {
   closedByUser = false;
   useBridge.setState({ status: "connecting", error: null });
 
-  // Started here, while the click that called this is still fresh: a browser
-  // refuses to open an AudioContext without a user gesture behind it.
-  try {
-    await ensureEngine();
-  } catch (cause) {
-    useBridge.setState({
-      status: "error",
-      error: cause instanceof Error ? cause.message : "Could not start audio in this browser.",
-    });
-    return;
-  }
+  // The audio graph is deliberately not built here: browsers only allow an
+  // AudioContext to start from a user gesture, and connecting happens on its
+  // own at sign-in. Joining a channel or opening the microphone builds it, and
+  // both of those are clicks.
 
   try {
     socket = new WebSocket(target);
@@ -150,9 +186,13 @@ export async function connectBridge(url?: string): Promise<void> {
   }
   socket.binaryType = "arraybuffer";
 
+  let everOpened = false;
   socket.onopen = () => {
+    everOpened = true;
     reconnectAttempt = 0;
     useBridge.setState({ status: "connected", error: null });
+    // A call that was interrupted by an expiring worker picks up here.
+    if (lastJoin) void resumeCall();
   };
   socket.onmessage = (event) => handleMessage(event.data);
   socket.onerror = () => {
@@ -161,6 +201,7 @@ export async function connectBridge(url?: string): Promise<void> {
   };
   socket.onclose = (event) => {
     socket = null;
+    micWasOpen = useBridge.getState().micEnabled;
     useBridge.setState({ status: "off", voice: "idle", speaking: [] });
     engine?.clearIncoming();
     if (closedByUser) return;
@@ -169,7 +210,12 @@ export async function connectBridge(url?: string): Promise<void> {
       useBridge.setState({ status: "error", error: "The bridge rejected the secret in the URL." });
       return;
     }
-    const delay = RECONNECT_DELAYS_MS[reconnectAttempt];
+    // A handshake that never completed usually means the address answered with
+    // an ordinary HTTP error, which the WebSocket API hides; it is worth asking.
+    if (!everOpened) void explainFailure(target);
+    // A worker that warned it was expiring is expected back at once; anything
+    // else backs off.
+    const delay = event.code === EXPIRED_CLOSE_CODE ? 0 : RECONNECT_DELAYS_MS[reconnectAttempt];
     if (delay === undefined) {
       useBridge.setState({ status: "error", error: "Lost the voice bridge." });
       return;
@@ -184,6 +230,8 @@ export async function connectBridge(url?: string): Promise<void> {
 
 export async function disconnectBridge(): Promise<void> {
   closedByUser = true;
+  lastJoin = null;
+  micWasOpen = false;
   socket?.close(1000);
   socket = null;
   useBridge.setState({ status: "off", voice: "idle", speaking: [], nowPlaying: null, micEnabled: false });
@@ -199,14 +247,48 @@ export function bridgeJoin(
   options: { selfMute?: boolean; selfDeaf?: boolean } = {},
 ) {
   void ensureEngine();
-  useBridge.setState({ voice: "connecting" });
-  send({
-    t: "join",
+  lastJoin = {
     guildId,
     channelId,
     selfMute: options.selfMute ?? false,
     selfDeaf: options.selfDeaf ?? false,
+  };
+  useBridge.setState({ voice: "connecting" });
+  send({ t: "join", ...lastJoin });
+}
+
+/**
+ * Puts a call back together on a fresh worker instance.
+ *
+ * Discord only hands out a voice server when a member joins a channel, so
+ * re-entering it is the only way to get one: the bot leaves and immediately
+ * comes back. The gap is a moment long, and `resuming` keeps the UI from
+ * reporting it as having left.
+ */
+async function resumeCall(): Promise<void> {
+  const join = lastJoin;
+  if (!join) return;
+
+  useBridge.setState({ resuming: true, voice: "connecting" });
+  sendGatewayPayload?.({
+    op: 4,
+    d: {
+      guild_id: join.guildId,
+      channel_id: null,
+      self_mute: join.selfMute,
+      self_deaf: join.selfDeaf,
+    },
   });
+  await new Promise((resolve) => setTimeout(resolve, RESUME_GAP_MS));
+
+  // The user may have hung up while this was waiting.
+  if (!lastJoin || socket?.readyState !== WebSocket.OPEN) {
+    useBridge.setState({ resuming: false });
+    return;
+  }
+  send({ t: "join", ...lastJoin });
+  useBridge.setState({ resuming: false });
+  if (micWasOpen) await setMicrophone(true).catch(() => {});
 }
 
 /** Mute, deafen or move without rebuilding the voice connection. */
@@ -216,6 +298,8 @@ export function bridgeUpdate(options: {
   selfDeaf?: boolean;
 }) {
   send({ t: "update", ...options });
+  // Remembered too, so a resumed call comes back muted if it was muted.
+  if (lastJoin) lastJoin = { ...lastJoin, ...stripUndefined(options) };
   // Muting keeps the microphone open and sends silence, so unmuting is instant.
   if (options.selfMute !== undefined) applyMicVolume(options.selfMute);
   // Deafening is a flag to Discord, but it should also mean this browser goes
@@ -227,6 +311,8 @@ export function bridgeUpdate(options: {
 }
 
 export function bridgeLeave() {
+  lastJoin = null;
+  micWasOpen = false;
   send({ t: "leave" });
   engine?.clearIncoming();
   engine?.stopFile();
@@ -288,6 +374,21 @@ export function stopFile() {
 
 // Internals ------------------------------------------------------------------
 
+/**
+ * Asks the bridge address over plain HTTP why it refused to be a WebSocket.
+ * The route answers refusals in words, so this turns "lost the voice bridge"
+ * into something the user can act on.
+ */
+async function explainFailure(target: string) {
+  try {
+    const response = await fetch(target.replace(/^ws/, "http"), { method: "GET" });
+    const body = (await response.text()).trim();
+    if (!response.ok && body) useBridge.setState({ error: body.slice(0, 300) });
+  } catch {
+    // Unreachable entirely, which the existing message already covers.
+  }
+}
+
 async function ensureEngine(): Promise<VoiceAudioEngine> {
   if (engine?.running) return engine;
   const audio = new VoiceAudioEngine({
@@ -334,7 +435,15 @@ function handleMessage(data: string | ArrayBuffer) {
 
   switch (message.t) {
     case "hello":
-      useBridge.setState({ opus: typeof message.opus === "string" ? message.opus : null });
+      useBridge.setState({
+        opus: typeof message.opus === "string" ? message.opus : null,
+        hosted: message.hosted === true,
+      });
+      break;
+    case "expiring":
+      // The worker's instance is about to reach its time limit. Going first
+      // means the gap is a reconnect of our choosing rather than a cut-off.
+      socket?.close(EXPIRED_CLOSE_CODE, "worker expiring");
       break;
     case "gateway":
       // The worker has no gateway of its own; this page sends the payload.
@@ -375,6 +484,11 @@ function handleIncomingAudio(data: ArrayBuffer) {
 
 function send(message: Record<string, unknown>) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+}
+
+/** Keeps a remembered call from being overwritten with `undefined`s. */
+function stripUndefined<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Partial<T>;
 }
 
 function clamp(value: number, max = 1): number {
