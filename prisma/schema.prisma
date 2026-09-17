@@ -1,0 +1,94 @@
+// Cloudflare D1 is SQLite, so the schema stays within what SQLite supports.
+//
+// Everything the client considers private is stored as ciphertext: the server
+// never sees a bot token, a DM, or the key that would open them. What is left
+// in the clear is what the database needs to find a row at all — the Discord
+// account it belongs to, the kind of item, and an opaque per-item reference.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// One person, identified by the Discord account they signed in with.
+model User {
+  id         String   @id
+  /// Discord's snowflake for the account; the only identity this app keeps.
+  discordId  String   @unique
+  username   String
+  globalName String?
+  avatar     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sessions Session[]
+  wrappers KeyWrapper[]
+  items    VaultItem[]
+}
+
+/// A signed-in browser. The cookie carries the id and a secret; only the
+/// secret's hash is stored, so a database leak cannot be replayed as a login.
+model Session {
+  id         String   @id
+  userId     String
+  secretHash String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// One way of unlocking the vault: a passkey, the recovery code, or a
+/// passphrase. Each holds the same vault key, encrypted with a key that only
+/// the browser can produce. The server stores the wrapped blob and nothing else.
+model KeyWrapper {
+  id    String @id
+  userId String
+  /// "passkey" | "recovery" | "passphrase"
+  kind  String
+  /// What the person sees in the list, e.g. "MacBook Touch ID".
+  label String
+  /// WebAuthn credential id (base64url) for a passkey wrapper.
+  credentialId String?
+  /// Salt for the PRF evaluation or the password KDF, base64url.
+  salt String
+  /// The vault key, AES-GCM encrypted: iv + ciphertext, base64url.
+  wrapped String
+  /// KDF parameters as JSON, so the numbers can change without a migration.
+  params     String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// One encrypted record: a saved bot, a remembered DM, a preference blob.
+model VaultItem {
+  id     String @id
+  userId String
+  /// "bot" | "dm" | "settings" — plaintext, because the sync has to query it.
+  kind String
+  /// Opaque, stable handle for the record: HMAC of its real id under the vault
+  /// key, so two devices agree on it while the server cannot read it.
+  ref String
+  /// iv + AES-GCM ciphertext of the record's JSON, base64url.
+  ciphertext String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, ref])
+  @@index([userId, kind])
+}

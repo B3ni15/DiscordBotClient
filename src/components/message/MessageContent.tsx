@@ -5,6 +5,7 @@ import { userAvatarUrl } from "@/lib/discord/cdn";
 import { Markdown } from "@/lib/markdown";
 import { useClient } from "@/lib/store/client";
 import { Attachments } from "./Attachments";
+import { contentIsOnlyEmbedLinks } from "./embedMedia";
 import { EmbedCard } from "./EmbedCard";
 
 export interface MessageContentProps {
@@ -15,6 +16,12 @@ export interface MessageContentProps {
 export function MessageContent({ message }: MessageContentProps) {
   const guildId = useMessageGuildId(message);
   const edited = message.edited_timestamp;
+  /*
+   * A message that is only a link to an image shows the image and not the link:
+   * the embed below already is the content. The text stays until the embed
+   * arrives, which for a fresh message is one MESSAGE_UPDATE later.
+   */
+  const linkOnly = contentIsOnlyEmbedLinks(message.content, message.embeds);
 
   const editedMarker = edited ? (
     <time
@@ -33,7 +40,7 @@ export function MessageContent({ message }: MessageContentProps) {
         <ReplyPreview message={message} guildId={guildId} />
       )}
 
-      {message.content ? (
+      {message.content && !linkOnly ? (
         <Markdown
           content={message.content}
           guildId={guildId}

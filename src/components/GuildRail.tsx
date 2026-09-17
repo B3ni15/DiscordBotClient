@@ -3,11 +3,13 @@
 import { useState } from "react";
 import type { APIGuild } from "discord-api-types/v10";
 
+import { guildMenuItems } from "@/components/context/menus";
 import { UnreadBadge } from "@/components/notifications/UnreadBadge";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { guildAcronym, guildIconUrl } from "@/lib/discord/cdn";
 import { useGuildUnread } from "@/lib/notifications/unread";
 import { useClient } from "@/lib/store/client";
+import { openMenuFor } from "@/lib/store/contextMenu";
 import { useUI } from "@/lib/store/ui";
 
 /** Server icons down the left edge, with Discord's sliding selection pill. */
@@ -96,6 +98,7 @@ interface RailItemProps {
   active: boolean;
   pressed?: boolean;
   onSelect: () => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
   children: React.ReactNode;
   className?: string;
   badge?: number;
@@ -111,6 +114,7 @@ function RailItem({
   active,
   pressed,
   onSelect,
+  onContextMenu,
   children,
   className,
   badge = 0,
@@ -129,6 +133,7 @@ function RailItem({
         <button
           type="button"
           onClick={onSelect}
+          onContextMenu={onContextMenu}
           onPointerEnter={() => setHovered(true)}
           onPointerLeave={() => setHovered(false)}
           onFocus={() => setHovered(true)}
@@ -164,7 +169,13 @@ function GuildButton({
   const icon = guildIconUrl(guild);
 
   return (
-    <RailItem label={guild.name} active={active} onSelect={onSelect} badge={unread}>
+    <RailItem
+      label={guild.name}
+      active={active}
+      onSelect={onSelect}
+      onContextMenu={(event) => openMenuFor(event, guild.name, guildMenuItems(guild.id))}
+      badge={unread}
+    >
       {icon ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={icon} alt="" className="h-full w-full object-cover" />

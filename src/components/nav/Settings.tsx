@@ -1,5 +1,6 @@
 "use client";
 
+import { AccountSection } from "@/components/account/AccountSection";
 import { NotificationSettings } from "@/components/notifications/NotificationSettings";
 import { PresenceEditor } from "@/components/nav/PresenceEditor";
 import { BotTag } from "@/components/ui/BotTag";
@@ -48,6 +49,8 @@ export function Settings({ onClose, className }: SettingsProps) {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <AccountSection />
+
         <section className="mb-6">
           <h3 className="pb-2 text-xs font-semibold text-muted">Signed-in bot</h3>
           {user ? (

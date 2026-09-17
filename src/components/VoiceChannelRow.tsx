@@ -1,9 +1,11 @@
 "use client";
 
 import type { APIChannel, APIGuildMember } from "discord-api-types/v10";
+import { channelMenuItems, memberMenuItems } from "@/components/context/menus";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { displayName, memberColorHex } from "@/lib/discord/roles";
 import { useClient, type VoiceState } from "@/lib/store/client";
+import { openMenuFor } from "@/lib/store/contextMenu";
 
 const STAGE = 13;
 const EMPTY_VOICE: Record<string, VoiceState> = {};
@@ -84,7 +86,10 @@ export function VoiceChannelRow({ channel, guildId }: VoiceChannelRowProps) {
   const roles = guild?.roles ?? [];
 
   return (
-    <li className="group/voice">
+    <li
+      onContextMenu={(event) => openMenuFor(event, "Channel", channelMenuItems(channel, guildId))}
+      className="group/voice"
+    >
       {/*
         A plain title rather than a floating tooltip: the sidebar scrolls, so an
         absolutely positioned bubble gets clipped at its edge.
@@ -121,6 +126,7 @@ export function VoiceChannelRow({ channel, guildId }: VoiceChannelRowProps) {
               state={state}
               member={state.member ?? members?.[state.userId]}
               roles={roles}
+              guildId={guildId}
             />
           ))}
         </ul>
@@ -133,10 +139,12 @@ function Occupant({
   state,
   member,
   roles,
+  guildId,
 }: {
   state: VoiceState;
   member: APIGuildMember | undefined;
   roles: Parameters<typeof memberColorHex>[1];
+  guildId: string | null;
 }) {
   const user = member?.user;
   const name = member ? displayName(member) : state.userId;
@@ -148,7 +156,12 @@ function Occupant({
   const byServer = state.serverMute || state.serverDeaf;
 
   return (
-    <li className="flex items-center gap-2 rounded px-2 py-0.5 transition-colors hover:bg-hover">
+    <li
+      onContextMenu={(event) => {
+        if (guildId) openMenuFor(event, name, memberMenuItems(guildId, state.userId));
+      }}
+      className="flex items-center gap-2 rounded px-2 py-0.5 transition-colors hover:bg-hover"
+    >
       {user ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img

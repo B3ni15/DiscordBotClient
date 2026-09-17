@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { APIEmbed, APIEmbedField } from "discord-api-types/v10";
 import { Markdown, safeUrl } from "@/lib/markdown";
+import { bareMedia, type EmbedMedia } from "./embedMedia";
 import { Lightbox } from "./Lightbox";
 
 export interface EmbedCardProps {
@@ -12,6 +13,61 @@ export interface EmbedCardProps {
 }
 
 export function EmbedCard({ embed, guildId = null }: EmbedCardProps) {
+  const media = bareMedia(embed);
+  // A pasted image or GIF is shown on its own, without a card around it.
+  if (media) return <BareMedia media={media} />;
+
+  return <RichEmbed embed={embed} guildId={guildId} />;
+}
+
+/**
+ * The picture alone: no border, no stripe, no repeated link — the way Discord
+ * renders an image, a GIF or a Tenor post.
+ */
+function BareMedia({ media }: { media: EmbedMedia }) {
+  const [zoomed, setZoomed] = useState(false);
+
+  if (media.kind === "video") {
+    return (
+      <video
+        src={media.src}
+        poster={media.poster}
+        width={media.width}
+        height={media.height}
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="metadata"
+        className="mt-1 max-h-80 w-auto max-w-md rounded"
+      />
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setZoomed(true)}
+        aria-label="Open image full size"
+        className="mt-1 block w-fit max-w-md cursor-zoom-in overflow-hidden rounded"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={media.src}
+          alt=""
+          width={media.width}
+          height={media.height}
+          loading="lazy"
+          className="max-h-80 w-auto max-w-full object-contain"
+        />
+      </button>
+      {zoomed && <Lightbox src={media.src} alt="" onClose={() => setZoomed(false)} />}
+    </>
+  );
+}
+
+function RichEmbed({ embed, guildId }: { embed: APIEmbed; guildId: string | null }) {
   const [zoomed, setZoomed] = useState(false);
   const stripe = typeof embed.color === "number" ? `#${embed.color.toString(16).padStart(6, "0")}` : null;
   const titleHref = embed.url ? safeUrl(embed.url) : null;

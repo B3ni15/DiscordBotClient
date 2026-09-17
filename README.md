@@ -242,13 +242,13 @@ Privacy is a core design goal of DisbotClient.
 
 ### Bot token
 
-Your bot token is stored only in this browser's `localStorage` under:
+By default your bot token is stored only in this browser's `localStorage` under:
 
 ```text
 disbotclient:token
 ```
 
-There is no database for tokens. Signing out removes the locally stored token.
+Signing out removes it. If you turn on the optional account sync described below, the token is *also* kept on the server — encrypted in your browser first, with a key the server never receives.
 
 > ⚠️ **Never enter a user account token.** DisbotClient is designed for bot tokens only.
 
@@ -283,6 +283,73 @@ The Discord Gateway connection is made directly by the browser rather than being
 The public instance at **disbotclient.xyz** uses Vercel Web Analytics for anonymous page-view analytics. This is separate from Discord data and does not provide the application with your bot token or message content.
 
 If you want the smallest possible trust boundary, self-host the application.
+
+---
+
+## 🔑 Accounts & end-to-end encrypted sync
+
+Sync is **optional**. With no account configured — or no account signed in — DisbotClient behaves exactly as it always has: everything lives in the browser and the server stores nothing.
+
+Sign in with Discord and the app gains a vault: your saved bots, the DM list and your notification preferences follow you between devices.
+
+### What the server can and cannot see
+
+| Stored on the server | Readable by the server |
+|---|---|
+| Your Discord user id, username and avatar | ✅ yes — this is how the account is identified |
+| Bot tokens, DM entries, preferences | ❌ no — AES-256-GCM ciphertext |
+| The key that decrypts them | ❌ never sent |
+| How many items of each kind you have | ✅ yes — the row's kind and an opaque reference are in the clear |
+
+The vault key is a random AES-256 key generated in your browser. What the database holds is that key **wrapped** (encrypted) by a key only you can reproduce:
+
+- **A passkey**, through WebAuthn's [PRF extension](https://w3c.github.io/webauthn/#prf-extension). The authenticator derives 32 bytes from the credential and a stored salt; nothing else can produce them, and they never leave the device. Touch ID, Windows Hello, a phone or a security key all work — as long as the authenticator supports PRF (most modern ones do; some older security keys do not).
+- **A recovery code** — 24 characters, generated once, shown once. Run through PBKDF2-SHA256 with 600,000 iterations.
+- **A passphrase**, optional, for browsers without passkey support. Same KDF.
+
+Each of these is stored as a separate wrapper, so you can add a passkey per device and still keep the code in a safe place. Removing the last one is refused: without a wrapper the key is unrecoverable.
+
+The passkey is *not* used to log in — the Discord session does that. It exists only to hold a key, which is why there is no WebAuthn verification on the server and no attestation stored.
+
+### Staying unlocked
+
+After a successful unlock the key is kept in this browser's IndexedDB so a reload does not ask again. That is a convenience with a cost: anyone who can run code in your browser profile can use it. "Lock this device" in **Settings → Sync → Passkeys and recovery** removes it. The server is unaffected either way.
+
+### Deleting the account
+
+**Settings → Sync → Passkeys and recovery → Delete account** wipes the user row, every session, every key wrapper and every encrypted item. It cannot be undone, and there is no backup — the key only ever existed in your browsers.
+
+### Setting it up
+
+Copy `.env.example` to `.env` and fill in:
+
+| Variable | What it is |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account that owns the D1 database |
+| `CLOUDFLARE_DATABASE_ID` | The D1 database id |
+| `CLOUDFLARE_D1_TOKEN` | API token with **D1 Edit** permission |
+| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | Your Discord application's OAuth2 credentials |
+| `DISCORD_REDIRECT_URI` | Optional; defaults to `<origin>/api/auth/callback` |
+
+Add that redirect URI to the OAuth2 page of your Discord application. Only the `identify` scope is requested.
+
+Then create the tables:
+
+```bash
+npm run db:push      # applies prisma/migrations/*.sql to D1 over its HTTP API
+npm run db:status    # shows which migrations are applied
+```
+
+`db:push` talks to the same `…/d1/database/<id>/query` endpoint a `curl` would, and records what it applied in a `_migrations` table, so it is safe to re-run.
+
+To develop without a Cloudflare account, set `DATABASE_URL=file:./prisma/dev.db` instead and run `npm run db:local`.
+
+After changing `prisma/schema.prisma`, generate the next migration and apply it:
+
+```bash
+npm run db:sql > prisma/migrations/0002_whatever.sql
+npm run db:push
+```
 
 ---
 
@@ -381,9 +448,17 @@ Browser-local state is used for information such as:
 - Notification settings
 - Client preferences
 
+With sync turned on, the same information is mirrored into the vault as ciphertext.
+
+### Database (optional)
+
+- Cloudflare D1 over its HTTP API
+- Prisma 7 with the D1 driver adapter
+- SQL migrations applied by `scripts/d1-migrate.mjs`
+
 ### Server-side component
 
-The server-side component is intentionally small and primarily provides the same-origin REST proxy.
+The server-side component is intentionally small: the same-origin REST proxy, the Discord OAuth handshake, and a handful of endpoints that store and return ciphertext for the signed-in account.
 
 ---
 
