@@ -1,130 +1,493 @@
-c# disbotclient
+# DisbotClient
 
-A Discord client for your bot that runs in the browser.
-[disbotclient.xyz](https://disbotclient.xyz)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/B3ni15/DiscordBotClient/master/public/brag.gif" alt="DisbotClient preview" width="900">
+</p>
 
-The app has a small same-origin API proxy for Discord REST requests. Your bot
-token stays in the browser's `localStorage`; the proxy only forwards requests to
-Discord and does not store or log the token.
+<p align="center">
+  <strong>A modern Discord client built specifically for bots.</strong><br>
+  Use your bot like a real Discord client — directly from your browser.
+</p>
 
-## Run it
+<p align="center">
+  <a href="https://disbotclient.xyz"><img src="https://img.shields.io/badge/Live%20Demo-disbotclient.xyz-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Live Demo"></a>
+  <a href="https://github.com/B3ni15/DiscordBotClient/blob/master/LICENSE"><img src="https://img.shields.io/github/license/B3ni15/DiscordBotClient?style=for-the-badge" alt="License"></a>
+  <a href="https://github.com/B3ni15/DiscordBotClient"><img src="https://img.shields.io/github/stars/B3ni15/DiscordBotClient?style=for-the-badge&logo=github" alt="GitHub stars"></a>
+  <a href="https://github.com/B3ni15/DiscordBotClient/issues"><img src="https://img.shields.io/github/issues/B3ni15/DiscordBotClient?style=for-the-badge" alt="Issues"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" alt="Next.js">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React">
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Tailwind%20CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
+  <img src="https://img.shields.io/badge/Discord%20API-Bot%20Compatible-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord API">
+</p>
+
+---
+
+## ✨ What is DisbotClient?
+
+DisbotClient is an open-source web client built around one simple idea:
+
+> **Bot accounts should have a proper client too.**
+
+Instead of building a separate dashboard for every Discord bot, DisbotClient provides a Discord-like interface for interacting with the servers, channels, members, messages and bot tooling available to a bot account.
+
+It runs entirely from the browser, connects directly to the Discord Gateway, and uses a small same-origin proxy for Discord REST requests.
+
+**No account. No sign-up. No database. No server-side message store.**
+
+🌐 **Live:** https://disbotclient.xyz
+
+---
+
+## 🏅 Features
+
+| | Feature | Description |
+|---|---|---|
+| 💬 | **Messaging** | Read, send, reply to, edit, delete, pin and react to messages |
+| ⚡ | **Live Gateway** | Real-time messages, edits, deletes, reactions and typing events |
+| 🧵 | **Threads** | Browse active threads and create new threads |
+| 🔎 | **Search** | Discord search when available, with a loaded-history fallback |
+| 👥 | **Members** | Online/offline members, roles, statuses and activities |
+| 🏷️ | **Badges** | Public Discord badges and server-booster status where exposed |
+| 🎨 | **Profiles** | Avatars, decorations, banners, roles, permissions and activities |
+| 😀 | **Emoji** | Server custom emoji, animated emoji and emoji picker |
+| 📎 | **Attachments** | Images, video, audio, uploads, embeds and image lightbox |
+| 📌 | **Pins** | Browse and manage pinned messages |
+| 💌 | **DMs** | Open direct conversations by user ID and remember them locally |
+| 🔔 | **Notifications** | Desktop notifications, unread badges and local mutes |
+| 🛠️ | **Bot tooling** | Manage slash commands and handle incoming interactions |
+| 🎙️ | **Voice awareness** | See voice/stage channels and their current participants |
+| 🔐 | **Privacy-first** | Tokens and local preferences remain in the browser |
+
+---
+
+## 🎯 Made for bot accounts
+
+The normal Discord client is primarily designed around user accounts. DisbotClient takes the opposite approach and builds its interface around what a **bot token** can actually access.
+
+That includes:
+
+- Servers the bot has joined
+- Categories and channels
+- Channel permissions relevant to the bot
+- Member lists and roles
+- Message history
+- Live Gateway events
+- Custom server emoji
+- Threads and pins
+- Voice/stage channel occupancy
+- Bot-accessible profile information
+- Slash commands
+- Incoming interactions
+
+The client also intentionally respects Discord's bot-account API boundaries instead of trying to imitate a user account.
+
+---
+
+## 💬 Messaging
+
+DisbotClient provides a full Discord-style messaging experience with:
+
+- Infinite message history scroll-back
+- Live Gateway events
+- New messages, edits and deletes
+- Reactions and typing indicators
+- Replies
+- Message editing and deletion
+- Pinning
+- File uploads
+- Embeds and attachments
+- Images, video and audio playback
+- Image lightbox
+- Custom and animated emoji
+- Role-coloured mentions
+- Discord timestamps such as `<t:...>`
+- Spoilers
+- Inline and fenced code
+- Blockquotes
+- Lists
+- Headers and subtext
+- Bold, italic, underline and strikethrough
+
+The Markdown renderer is implemented specifically for the project without relying on a third-party Markdown parser.
+
+---
+
+## 👤 Profiles, members & badges
+
+Profiles are rendered using information that is available to the bot through Discord's APIs.
+
+Depending on the available data, a profile can show:
+
+- Avatar
+- Avatar decoration
+- Banner
+- Username and display name
+- Account creation date
+- Server join date
+- Roles and role colours
+- Relevant permissions
+- Online/offline presence
+- Custom status
+- Rich activities
+- Activity artwork
+- Activity elapsed time
+- Public account flags / badges
+- Server booster status
+
+Badges use Discord's public flag information where available and are displayed using Discord-style icons, with the badge name available on hover.
+
+> Some profile information is only available to user accounts. DisbotClient does not attempt to bypass Discord's API restrictions.
+
+---
+
+## 🧵 Threads, pins & search
+
+### Threads
+
+Browse active threads directly from the channel interface and create new threads when the bot has the required permissions.
+
+### Pinned messages
+
+Open pinned messages without leaving the normal channel experience.
+
+### Search
+
+The client first attempts to use Discord's search endpoint. If server-side search is unavailable to the bot, DisbotClient can fall back to searching message history that has already been loaded in the browser.
+
+Fallback search is therefore intentionally limited to data already available to the client.
+
+---
+
+## 💌 Direct messages
+
+Bot accounts do not receive the same DM-list functionality as normal Discord user accounts.
+
+DisbotClient handles this limitation transparently: DMs can be opened using a **user ID** or from a member card.
+
+Recently opened conversations can be remembered locally together with:
+
+- Display name
+- Username / handle
+- The server where you met the user
+- Their roles there
+- A local note you can add
+
+This information is stored in browser `localStorage` and is not uploaded to the application server.
+
+---
+
+## 🎙️ Voice & stage channels
+
+The client can display voice and stage channels together with their current state:
+
+- Current participants
+- Microphone state
+- Headphone/deafened state
+- Camera state
+- Go Live state
+- Channel user limit
+- Voice-channel text chat
+
+### Why can't DisbotClient join voice?
+
+The actual voice stream is not currently implemented.
+
+Discord's browser client uses a WebRTC-based voice flow that is not exposed as a documented public browser API for this use case. DisbotClient therefore keeps voice streaming separate rather than relying on an unsupported workaround.
+
+---
+
+## 🛠️ Bot tooling
+
+DisbotClient is more than a message viewer.
+
+### Slash commands
+
+Manage application commands directly from the client:
+
+- List global commands
+- List server commands
+- Create commands
+- Edit commands
+- Delete commands
+
+### Interaction inbox
+
+Incoming slash-command invocations can be viewed and handled from the interaction inbox.
+
+You can respond inside Discord's interaction response window, or defer an interaction and complete it using a follow-up.
+
+This makes DisbotClient useful as a lightweight operational interface for bot developers and administrators.
+
+---
+
+## 🔔 Notifications
+
+Desktop notifications are available for incoming activity, with local controls for:
+
+- Per-channel mute
+- Per-server mute
+- Unread badges
+
+Notification preferences remain in the browser and do not require an application account.
+
+---
+
+## 🔐 Privacy & security
+
+Privacy is a core design goal of DisbotClient.
+
+### Bot token
+
+Your bot token is stored only in this browser's `localStorage` under:
+
+```text
+disbotclient:token
+```
+
+There is no database for tokens. Signing out removes the locally stored token.
+
+> ⚠️ **Never enter a user account token.** DisbotClient is designed for bot tokens only.
+
+### REST API proxy
+
+Discord REST requests go through the same-origin proxy:
+
+```text
+/api/discord/*
+```
+
+The proxy forwards the request to Discord and streams the response back. It is designed to be stateless and forwards only the headers required by the request, including authorization, content type and audit-log reason.
+
+The proxy does not intentionally persist:
+
+- Bot tokens
+- Messages
+- User data
+- Sessions
+- Application state
+
+### Messages stay in memory
+
+Messages are fetched from Discord into the browser while the tab is open. They are not copied into a server-side message database.
+
+### Gateway connection
+
+The Discord Gateway connection is made directly by the browser rather than being proxied through the application server.
+
+### Hosted analytics
+
+The public instance at **disbotclient.xyz** uses Vercel Web Analytics for anonymous page-view analytics. This is separate from Discord data and does not provide the application with your bot token or message content.
+
+If you want the smallest possible trust boundary, self-host the application.
+
+---
+
+## 🧩 Discord intents
+
+For the fullest experience, enable these intents in the Discord Developer Portal:
+
+- `MESSAGE CONTENT INTENT`
+- `SERVER MEMBERS INTENT`
+- `PRESENCE INTENT`
+
+| Intent | Used for |
+|---|---|
+| **Message Content** | Reading message content |
+| **Server Members** | Member lists and member information |
+| **Presence** | Online/offline state, custom status and activities |
+
+If an intent is disabled, Discord will not provide the corresponding data. DisbotClient attempts to use the intents that are actually available instead of unnecessarily failing the entire connection.
+
+---
+
+## 🚧 Limitations
+
+These limitations primarily come from Discord's bot API:
+
+- **No DM list:** direct messages must be opened using a user ID or member card.
+- **No bot server-side message search:** fallback search only covers history already loaded into the browser.
+- **Only invited servers are visible:** a bot cannot browse arbitrary servers.
+- **Presence requires the Presence Intent.**
+- **No user bios:** bot accounts cannot use the user-profile endpoint in the same way as user accounts.
+- **No Nitro / Quest-style user badges:** these are not exposed through the bot-accessible profile data.
+- **No voice streaming:** voice/stage channels and participants are visible, but the actual voice stream cannot currently be joined.
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] Browser voice connection
+- [ ] Incoming interaction components
+- [ ] Button interactions
+- [ ] Select menu interactions
+- [ ] Modal interaction responses
+- [ ] Guild management
+- [ ] Channel management
+- [ ] Role management
+- [ ] Permission management
+- [ ] Invite management
+- [ ] Stickers
+- [ ] Polls
+- [ ] More bot administration tools
+
+The roadmap may change as Discord's APIs evolve.
+
+---
+
+## 🏗️ Architecture
+
+```text
+┌──────────────────────────────┐
+│           Browser            │
+│                              │
+│  Next.js / React / Zustand   │
+│          │        │          │
+│          │        └─────────────────┐
+│          │                          │
+│          ▼                          ▼
+│   Discord REST proxy        Discord Gateway
+│          │                          │
+└──────────┼──────────────────────────┼─────┘
+           │                          │
+           ▼                          ▼
+      Discord REST               Discord Gateway
+```
+
+### Frontend
+
+- Next.js App Router
+- React
+- TypeScript
+- Tailwind CSS
+- Zustand
+
+### Discord integration
+
+- Custom Discord REST client
+- Custom Discord Gateway client
+- `discord-api-types`
+
+### Local state
+
+Browser-local state is used for information such as:
+
+- Bot token
+- Opened DM information
+- Mutes
+- Notification settings
+- Client preferences
+
+### Server-side component
+
+The server-side component is intentionally small and primarily provides the same-origin REST proxy.
+
+---
+
+## 🚀 Run locally
+
+### Requirements
+
+- Node.js
+- npm
+- A Discord bot application
+
+### Installation
 
 ```bash
+git clone https://github.com/B3ni15/DiscordBotClient.git
+cd DiscordBotClient
 npm install
+```
+
+### Development
+
+```bash
 npm run dev
 ```
 
-Production build:
+### Production
 
 ```bash
 npm run build
+npm run start
 ```
 
-## Privacy — no data is stored
+### Lint
 
-There is no account, no sign-up and no database. Nothing you do here is stored
-on a server.
+```bash
+npm run lint
+```
 
-- **Your token** lives in this browser's `localStorage` under
-  `disbotclient:token` and nowhere else. Signing out deletes it.
-- **Your DM list, mutes and notification settings** are `localStorage` as well.
-  They never leave the browser, which is also why they do not follow you to
-  another device.
-- **The API proxy** (`/api/discord/*`) forwards a request to Discord and streams
-  the answer back. It copies only the `authorization`, `content-type` and
-  `x-audit-log-reason` headers, writes nothing to disk and logs neither the
-  token nor the messages. It is stateless: restart it and it knows nothing.
-- **Messages are never copied anywhere.** They are read from Discord into memory
-  for as long as the tab is open and are gone when you close it.
-- **The gateway connection** is made by your browser straight to Discord.
-- **The hosted site** at [disbotclient.xyz](https://disbotclient.xyz) counts
-  anonymous page views with Vercel Web Analytics. It sees no Discord data, no
-  token and no message content. Self-host and it is not there at all.
+---
 
-If you would rather trust nothing, run it yourself — see *Run it* above.
+## 🔍 Self-hosting
 
-## Your token
+The hosted instance is convenient, but self-hosting gives you complete control over the deployment.
 
-Find it on the Bot tab of the
-[Developer Portal](https://discord.com/developers/applications). Turn on the
-`MESSAGE CONTENT`, `SERVER MEMBERS` and `PRESENCE` intents there as well, or
-message text arrives empty, the member list stays empty and nobody shows up as
-online. Whichever of them are off, the client steps down one intent at a time
-and connects with the rest instead of failing.
+With your own instance you can:
 
-Use a **bot** token only. A user account token ("selfbot") violates Discord's
-terms of service, and this client does not support it.
+- Control the server
+- Control the deployment
+- Remove hosted analytics
+- Inspect the source yourself
+- Run everything under your own infrastructure
 
-## What works
+This is especially useful when working with bots that have sensitive permissions.
 
-**Messages**
-- Servers, channels grouped by category, message history with infinite
-  scroll-back
-- Live gateway events: new messages, edits, deletes, reactions, typing
-- Full Discord markdown — bold, italic, underline, strikethrough, inline and
-  fenced code, blockquotes, lists, headers, subtext, spoilers
-- Mentions with role colours, `<t:…>` timestamps, custom and animated emoji
-- Embeds, attachments, image lightbox, video and audio playback
-- Send, reply, edit, delete, pin; file uploads
-- Reactions with an emoji picker that includes the server's own emoji
+---
 
-**Navigation**
-- Threads: browse the active ones, create new threads
-- Pinned messages
-- Search — tries Discord's search endpoint, falls back to searching the
-  history already loaded when the bot token is rejected (see limits below)
-- Direct messages opened by user ID or from any member card, remembered
-  locally together with who the person is (name, handle, the server you met
-  them in, their roles there, and a note you can add)
-- Voice and stage channels listed with everyone currently sitting in them,
-  their mic, headphone, camera and Go Live state, and the channel's user
-  limit. Clicking one opens its built-in voice text chat — the voice stream
-  itself cannot be joined (see limits)
-- Member list grouped by hoisted role, split into online and offline, with
-  status dots, custom statuses and what everyone is playing
-- User card with badges shown as Discord's own icons (named on hover), avatar
-  decoration, banner, presence, rich activity cards with artwork and an
-  elapsed timer, join and account dates, roles and the permissions that matter
+## ⚠️ Token safety
 
-**Bot tooling**
-- Slash command management: list, create, edit and delete global and
-  server-scoped commands
-- Interaction inbox: see incoming slash command invocations, reply within the
-  three-second window or defer and send a follow-up
-- Desktop notifications with per-channel and per-server mute, unread badges
+Treat a Discord bot token like a password.
 
-## Limits
+**Never commit it to Git. Never put it in an issue. Never send it to another person.**
 
-These come from the bot token, not from this client:
+If a token is exposed, rotate it immediately in the Discord Developer Portal.
 
-- No DM list; direct messages can only be opened with a user ID
-- No server-side message search, so search falls back to loaded history
-- The bot only sees servers it has been invited to
-- No presence (online/offline) unless the `PRESENCE INTENT` is enabled
-- No profile bios, and no Nitro or quest badges: those come from the
-  user-profile endpoint, which only user accounts may call. Everything in
-  `public_flags` is shown, plus the server-booster badge
-- Voice channels are shown, and so is who is in them, but the client cannot
-  join a voice stream — see below
+DisbotClient supports **bot tokens only**. User-account tokens / selfbots are not supported.
 
-## Not built yet
+---
 
-- **Joining voice.** Voice channels, their occupants and their text chat are
-  all there; connecting to the audio is not. It is possible in a browser —
-  Discord's own web client uses the voice gateway's WebRTC mode rather than raw
-  UDP — but that mode is undocumented, so it is deliberately a separate step.
-- Message components (buttons, select menus) on incoming interactions
-- Modal interaction responses
-- Guild and channel management (roles, permissions, invites)
-- Stickers and polls
+## 📦 Tech stack
 
-## Stack
+The project is intentionally lightweight and currently uses:
 
-Next.js (App Router, static export), TypeScript, Tailwind, Zustand. The REST
-and gateway clients are written for this project; the markdown parser and the
-emoji picker have no third-party dependencies. The interface follows Discord's
-own dark theme — surfaces, spacing, status shapes and motion.
+- **Next.js 16** — application framework
+- **React 19** — UI
+- **TypeScript 5** — type-safe development
+- **Tailwind CSS 4** — styling
+- **Zustand 5** — client state
+- **discord-api-types** — Discord API types
+- **Vercel Web Analytics** — anonymous analytics on the hosted instance
 
-## License
+The project also contains its own Discord REST and Gateway clients, Markdown renderer and emoji picker.
 
-MIT
+---
+
+## 📜 License
+
+DisbotClient is released under the **MIT License**.
+
+See [`LICENSE`](./LICENSE) for the complete license text.
+
+---
+
+## ⭐ Support the project
+
+If DisbotClient is useful to you, consider giving the repository a star. It helps the project get discovered and makes continued development easier to justify.
+
+<p align="center">
+  <a href="https://github.com/B3ni15/DiscordBotClient">⭐ Star on GitHub</a>
+  ·
+  <a href="https://github.com/B3ni15/DiscordBotClient/issues">🐛 Report an issue</a>
+  ·
+  <a href="https://disbotclient.xyz">🌐 Open DisbotClient</a>
+</p>
+
+<p align="center">
+  Made with TypeScript, React, Next.js and a lot of Discord API experimentation.
+</p>
