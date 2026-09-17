@@ -7,8 +7,9 @@ import { UnreadBadge } from "@/components/notifications/UnreadBadge";
 import { ThreadList } from "@/components/nav/ThreadList";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useUnread } from "@/lib/notifications/unread";
-import { isTextChannel, useClient } from "@/lib/store/client";
+import { isTextChannel, isVoiceChannel, useClient } from "@/lib/store/client";
 import { UserPanel } from "./UserPanel";
+import { VoiceChannelRow } from "./VoiceChannelRow";
 
 const CATEGORY = 4;
 const ANNOUNCEMENT = 5;
@@ -57,8 +58,10 @@ export function ChannelSidebar() {
           groups.map((group) => {
             const key = group.id ?? "__root__";
             const isCollapsed = collapsed[key] === true;
-            const visible = group.channels.filter(isTextChannel);
-            if (visible.length === 0) return null;
+            // Discord lists a category's text channels first, then its voice ones.
+            const textChannels = group.channels.filter(isTextChannel);
+            const voiceChannels = group.channels.filter(isVoiceChannel);
+            if (textChannels.length === 0 && voiceChannels.length === 0) return null;
 
             return (
               <section key={key} className="mb-4">
@@ -81,8 +84,15 @@ export function ChannelSidebar() {
                 )}
                 {!isCollapsed && (
                   <ul className="animate-fade-in">
-                    {visible.map((channel) => (
+                    {textChannels.map((channel) => (
                       <ChannelRow key={channel.id} channel={channel} />
+                    ))}
+                    {voiceChannels.map((channel) => (
+                      <VoiceChannelRow
+                        key={channel.id}
+                        channel={channel}
+                        guildId={selectedGuildId}
+                      />
                     ))}
                   </ul>
                 )}

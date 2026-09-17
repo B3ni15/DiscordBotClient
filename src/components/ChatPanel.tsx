@@ -17,6 +17,8 @@ import { Composer } from "./Composer";
 import { TypingIndicator } from "./TypingIndicator";
 
 const DM_TYPES = new Set([1, 3]);
+/** 2 = voice, 13 = stage; both carry Discord's built-in voice text chat. */
+const VOICE_TYPES = new Set([2, 13]);
 
 export function ChatPanel() {
   const channelId = useClient((state) => state.selectedChannelId);
@@ -81,6 +83,7 @@ function ChannelView({ channelId }: { channelId: string }) {
   }
 
   const isDM = channel !== undefined && DM_TYPES.has(channel.type);
+  const isVoice = channel !== undefined && VOICE_TYPES.has(channel.type);
   const recipient = isDM
     ? (channel as { recipients?: Array<{ username?: string; global_name?: string | null }> })
         .recipients?.[0]
@@ -96,7 +99,7 @@ function ChannelView({ channelId }: { channelId: string }) {
     <section className="flex min-w-0 flex-1 flex-col bg-chat">
       <header className="z-10 flex h-12 shrink-0 items-center gap-2 px-4 shadow-[0_1px_0_rgba(0,0,0,0.2),0_2px_0_rgba(0,0,0,0.05)]">
         <span aria-hidden className="text-xl leading-none text-faint">
-          {isDM ? "@" : "#"}
+          {isDM ? "@" : isVoice ? (channel?.type === 13 ? "📡" : "🔊") : "#"}
         </span>
         <h2 className="truncate text-base font-semibold text-bright">{channelName}</h2>
         {topic && (
@@ -108,7 +111,7 @@ function ChannelView({ channelId }: { channelId: string }) {
           </>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          {!isDM && (
+          {!isDM && !isVoice && (
             <Tooltip label="New thread">
               <button
                 type="button"
@@ -124,6 +127,13 @@ function ChannelView({ channelId }: { channelId: string }) {
           <HeaderButton panel="search" label="Search" glyph="🔍" />
         </div>
       </header>
+
+      {isVoice && (
+        <p className="flex shrink-0 items-center gap-2 border-b border-line bg-panel px-4 py-1.5 text-xs text-muted">
+          <span aria-hidden>🔇</span>
+          This is the channel&rsquo;s text chat. A bot client cannot join the voice stream itself.
+        </p>
+      )}
 
       {creatingThread && (
         <div className="animate-fade-in border-b border-line bg-panel px-4 py-3">
@@ -143,7 +153,7 @@ function ChannelView({ channelId }: { channelId: string }) {
         {messages === undefined ? (
           <MessageSkeletons />
         ) : messages.length === 0 ? (
-          <ChannelIntro name={channelName ?? channelId} isDM={isDM} />
+          <ChannelIntro name={channelName ?? channelId} isDM={isDM} isVoice={isVoice} />
         ) : (
           <>
             {loadingOlder && (
@@ -153,7 +163,12 @@ function ChannelView({ channelId }: { channelId: string }) {
               </p>
             )}
             {hasMore === false && !loadingOlder && (
-              <ChannelIntro name={channelName ?? channelId} isDM={isDM} compact />
+              <ChannelIntro
+                name={channelName ?? channelId}
+                isDM={isDM}
+                isVoice={isVoice}
+                compact
+              />
             )}
             <ol>
               {messages.map((message, index) => (
@@ -189,24 +204,28 @@ function ChannelView({ channelId }: { channelId: string }) {
 function ChannelIntro({
   name,
   isDM,
+  isVoice = false,
   compact = false,
 }: {
   name: string;
   isDM: boolean;
+  isVoice?: boolean;
   compact?: boolean;
 }) {
   return (
     <div className={`animate-fade-in ${compact ? "pt-2 pb-6" : "flex h-full flex-col justify-end pb-6"}`}>
       <div className="grid h-16 w-16 place-items-center rounded-full bg-raised text-3xl">
-        <span aria-hidden>{isDM ? "@" : "#"}</span>
+        <span aria-hidden>{isDM ? "@" : isVoice ? "🔊" : "#"}</span>
       </div>
       <h3 className="mt-4 text-2xl font-bold text-bright">
-        {isDM ? name : `Welcome to #${name}`}
+        {isDM ? name : isVoice ? name : `Welcome to #${name}`}
       </h3>
       <p className="mt-1 text-sm text-muted">
         {isDM
           ? `This is the start of your direct message history with ${name}.`
-          : `This is the beginning of the #${name} channel.`}
+          : isVoice
+            ? `This is the text chat of the ${name} voice channel.`
+            : `This is the beginning of the #${name} channel.`}
       </p>
     </div>
   );

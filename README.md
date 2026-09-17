@@ -76,6 +76,10 @@ terms of service, and this client does not support it.
 - Direct messages opened by user ID or from any member card, remembered
   locally together with who the person is (name, handle, the server you met
   them in, their roles there, and a note you can add)
+- Voice and stage channels listed with everyone currently sitting in them,
+  their mic, headphone, camera and Go Live state, and the channel's user
+  limit. Clicking one opens its built-in voice text chat — the voice stream
+  itself cannot be joined (see limits)
 - Member list grouped by hoisted role, split into online and offline, with
   status dots, custom statuses and what everyone is playing
 - User card with badges, banner, presence, join and account dates, roles and
@@ -96,13 +100,15 @@ These come from the bot token, not from this client:
 - No server-side message search, so search falls back to loaded history
 - The bot only sees servers it has been invited to
 - No presence (online/offline) unless the `PRESENCE INTENT` is enabled
-- No voice
+- Voice channels are shown, and so is who is in them, but the client cannot
+  join a voice stream — see below
 
 ## Not built yet
 
-- **Voice channels.** Possible in a browser — Discord's own web client uses the
-  voice gateway's WebRTC mode rather than raw UDP — but that mode is
-  undocumented, so it is deliberately a separate step.
+- **Joining voice.** Voice channels, their occupants and their text chat are
+  all there; connecting to the audio is not. It is possible in a browser —
+  Discord's own web client uses the voice gateway's WebRTC mode rather than raw
+  UDP — but that mode is undocumented, so it is deliberately a separate step.
 - Message components (buttons, select menus) on incoming interactions
 - Modal interaction responses
 - Guild and channel management (roles, permissions, invites)

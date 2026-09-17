@@ -41,6 +41,24 @@ export interface Presence {
 
 export const OFFLINE_PRESENCE: Presence = { status: "offline", activities: [], clientStatus: {} };
 
+/** Someone sitting in a voice channel, and what their mic and camera are doing. */
+export interface VoiceState {
+  userId: string;
+  channelId: string;
+  /** Silenced by a moderator, as opposed to having muted themselves. */
+  serverMute: boolean;
+  serverDeaf: boolean;
+  selfMute: boolean;
+  selfDeaf: boolean;
+  selfVideo: boolean;
+  /** Go Live screenshare. */
+  selfStream: boolean;
+  /** Stage channels: on stage rather than in the audience. */
+  suppress: boolean;
+  /** The member as the voice state carried it; voice works without the members intent. */
+  member?: APIGuildMember;
+}
+
 export interface TypingUser {
   userId: string;
   name: string;
@@ -69,6 +87,8 @@ interface ClientState {
    * pretend that everyone is offline.
    */
   presenceEnabled: boolean;
+  /** Who is sitting in which voice channel, per guild, keyed by user id. */
+  voiceStatesByGuild: Record<string, Record<string, VoiceState>>;
   typingByChannel: Record<string, TypingUser[]>;
 
   selectedGuildId: string | null;
@@ -106,6 +126,7 @@ export const useClient = create<ClientState>((set, get) => ({
   membersByGuild: {},
   presenceByGuild: {},
   presenceEnabled: false,
+  voiceStatesByGuild: {},
   typingByChannel: {},
   selectedGuildId: null,
   selectedChannelId: null,
@@ -168,6 +189,7 @@ export const useClient = create<ClientState>((set, get) => ({
       membersByGuild: {},
       presenceByGuild: {},
       presenceEnabled: false,
+      voiceStatesByGuild: {},
       typingByChannel: {},
       selectedGuildId: null,
       selectedChannelId: null,
@@ -297,6 +319,10 @@ function handleDispatch(
         presenceByGuild: presences
           ? { ...state.presenceByGuild, [guild.id]: presenceMap(presences) }
           : state.presenceByGuild,
+        voiceStatesByGuild: {
+          ...state.voiceStatesByGuild,
+          [guild.id]: voiceStateMap(guild.voice_states),
+        },
       }));
       // Discord always opens on a server; landing on an empty pane would make
       // the client look like it failed to connect.
@@ -325,6 +351,19 @@ function handleDispatch(
       }));
       break;
     }
+    case "VOICE_STATE_UPDATE": {
+      const data = raw as RawVoiceState & { guild_id?: string };
+      if (!data.guild_id || !data.user_id) break;
+      const guildId = data.guild_id;
+      set((state) => {
+        const current = { ...(state.voiceStatesByGuild[guildId] ?? {}) };
+        // A null channel_id means the user left voice altogether.
+        if (data.channel_id) current[data.user_id!] = toVoiceState(data);
+        else delete current[data.user_id!];
+        return { voiceStatesByGuild: { ...state.voiceStatesByGuild, [guildId]: current } };
+      });
+      break;
+    }
     case "GUILD_DELETE": {
       const { id } = raw as { id: string };
       set((state) => {
@@ -335,6 +374,9 @@ function handleDispatch(
           guildOrder: state.guildOrder.filter((guildId) => guildId !== id),
           presenceByGuild: Object.fromEntries(
             Object.entries(state.presenceByGuild).filter(([guildId]) => guildId !== id),
+          ),
+          voiceStatesByGuild: Object.fromEntries(
+            Object.entries(state.voiceStatesByGuild).filter(([guildId]) => guildId !== id),
           ),
           selectedGuildId: state.selectedGuildId === id ? null : state.selectedGuildId,
         };
@@ -561,6 +603,43 @@ function reactionKey(emoji: { id?: string | null; name?: string | null }) {
   return emoji.id ?? emoji.name ?? "";
 }
 
+interface RawVoiceState {
+  user_id?: string;
+  channel_id?: string | null;
+  mute?: boolean;
+  deaf?: boolean;
+  self_mute?: boolean;
+  self_deaf?: boolean;
+  self_video?: boolean;
+  self_stream?: boolean;
+  suppress?: boolean;
+  member?: APIGuildMember;
+}
+
+function toVoiceState(raw: RawVoiceState): VoiceState {
+  return {
+    userId: raw.user_id!,
+    channelId: raw.channel_id!,
+    serverMute: raw.mute ?? false,
+    serverDeaf: raw.deaf ?? false,
+    selfMute: raw.self_mute ?? false,
+    selfDeaf: raw.self_deaf ?? false,
+    selfVideo: raw.self_video ?? false,
+    selfStream: raw.self_stream ?? false,
+    suppress: raw.suppress ?? false,
+    member: raw.member,
+  };
+}
+
+function voiceStateMap(states: unknown[] | undefined): Record<string, VoiceState> {
+  const result: Record<string, VoiceState> = {};
+  for (const raw of states ?? []) {
+    const state = raw as RawVoiceState;
+    if (state.user_id && state.channel_id) result[state.user_id] = toVoiceState(state);
+  }
+  return result;
+}
+
 interface RawPresence {
   user?: { id?: string };
   status?: string;
@@ -614,8 +693,24 @@ function formatLoginError(cause: unknown) {
 /** 0 = text, 5 = announcement, 10/11/12 = threads. */
 const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
 
+/** 2 = voice, 13 = stage. */
+const VOICE_CHANNEL_TYPES = new Set([2, 13]);
+
 export function isTextChannel(channel: APIChannel | undefined): channel is APIChannel {
   return channel !== undefined && TEXT_CHANNEL_TYPES.has(channel.type);
+}
+
+export function isVoiceChannel(channel: APIChannel | undefined): channel is APIChannel {
+  return channel !== undefined && VOICE_CHANNEL_TYPES.has(channel.type);
+}
+
+/**
+ * Channels whose messages this client can show. Voice channels carry Discord's
+ * built-in voice text chat, which a bot reads and posts to like any other
+ * channel — the voice stream itself is what it cannot join.
+ */
+export function hasMessages(channel: APIChannel | undefined): channel is APIChannel {
+  return isTextChannel(channel) || isVoiceChannel(channel);
 }
 
 /** Category-aware ordering that matches how Discord renders a channel list. */
