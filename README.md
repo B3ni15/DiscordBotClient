@@ -59,6 +59,9 @@ It runs entirely from the browser, connects directly to the Discord Gateway, and
 | 💌 | **DMs** | Open direct conversations by user ID and remember them locally |
 | 🔔 | **Notifications** | Desktop notifications, unread badges and local mutes |
 | 🛠️ | **Bot tooling** | Manage slash commands and handle incoming interactions |
+| 🏛️ | **Server management** | Create, edit and delete channels, categories and roles; per-channel/category permission overwrites |
+| 🖱️ | **Context menus** | Discord-style right-click menus on servers, channels, categories, members and messages |
+| 🛡️ | **Moderation** | Kick, ban, time out, change nicknames and manage member roles, permissions permitting |
 | 🎙️ | **Voice** | Join voice channels, mute/deafen the bot, moderate other members |
 | 🔈 | **Soundboard** | Upload MP3/OGG sounds and play them into the channel the bot sits in |
 | 🎧 | **Live audio** | Microphone, audio files and listening, through a voice worker the deployment hosts |
@@ -322,6 +325,26 @@ returned rather than hiding it.
 
 ---
 
+## 🏛️ Server management & moderation
+
+Right-click a server, channel, category, member or message to get a Discord-style
+context menu with the actions the bot's permissions and role hierarchy actually
+allow:
+
+- Create, edit and delete channels and categories
+- Create and edit roles, and manage which roles a member has
+- Per-channel and per-category permission overwrites
+- Kick, ban and time out members
+- Server-mute, server-deafen and disconnect members from voice
+- Change member nicknames
+- Mark servers, categories and channels as read, and mute/unmute them
+
+Every destructive or permission-gated action is disabled with an explanation
+when the bot lacks the permission or is outranked by the target's roles,
+rather than failing silently against the Discord API.
+
+---
+
 ## 🛠️ Bot tooling
 
 DisbotClient is more than a message viewer.
@@ -509,14 +532,14 @@ These limitations primarily come from Discord's bot API:
 
 ## 🗺️ Roadmap
 
+- [x] Guild management
+- [x] Channel management
+- [x] Role management
+- [x] Permission management
 - [ ] Incoming interaction components
 - [ ] Button interactions
 - [ ] Select menu interactions
 - [ ] Modal interaction responses
-- [ ] Guild management
-- [ ] Channel management
-- [ ] Role management
-- [ ] Permission management
 - [ ] Invite management
 - [ ] Stickers
 - [ ] Polls
