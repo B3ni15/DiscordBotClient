@@ -4,7 +4,7 @@ import {
   entersState,
   joinVoiceChannel,
 } from "@discordjs/voice";
-import { FRAME_BYTES, decodeOutgoingAudio, encodeIncomingAudio } from "./protocol.mjs";
+import { FRAME_BYTES, decodeOutgoingAudio, encodeIncomingAudio, isSilenceMarker } from "./protocol.mjs";
 import { Transmitter } from "./transmitter.mjs";
 
 /** How often the page is told what this side is actually seeing. */
@@ -38,6 +38,8 @@ export class Session {
   /** Half-filled PCM, when a browser's frames do not line up with 20 ms. */
   #pending = null;
   #decoders = new Map();
+  /** So a broken codec is reported once rather than once per failed packet. */
+  #warnedDecodeFailure = false;
   #statsTimer = null;
   /** What this side has seen since the last report, for the page to display. */
   #counts = { framesIn: 0, packetsIn: 0 };
@@ -266,19 +268,40 @@ export class Session {
 
       stream.on("data", (packet) => {
         if (this.#socket.bufferedAmount > MAX_SOCKET_BACKLOG) return;
+        // Not audio, and opusscript's decoder does not survive being handed
+        // this — the whole codec can go down over a single one.
+        if (isSilenceMarker(packet)) return;
         try {
           this.#sendBinary(encodeIncomingAudio(userId, decoder.decode(packet)));
           this.#counts.packetsIn += 1;
         } catch (cause) {
           this.#log(`could not decode audio from ${userId}: ${cause.message}`);
+          if (!this.#warnedDecodeFailure) {
+            this.#warnedDecodeFailure = true;
+            this.#send({
+              t: "error",
+              message: "Could not hear the channel: the voice worker's Opus codec failed.",
+            });
+          }
+          // A decoder that just threw is not one to keep feeding: on a shared
+          // WASM build one bad packet can take the whole codec down, and every
+          // further call then throws the same way, forever, for every speaker.
+          // Better to drop this one stream than spend the rest of the call
+          // retrying a codec that is never coming back.
+          stream.destroy();
         }
       });
       const cleanup = () => {
-        decoder.destroy();
+        try {
+          decoder.destroy();
+        } catch {
+          // The codec may already be past helping; nothing more to do with it.
+        }
         this.#decoders.delete(userId);
       };
       stream.once("end", cleanup);
       stream.once("error", cleanup);
+      stream.once("close", cleanup);
     });
 
     receiver.speaking.on("end", (userId) => this.#send({ t: "speaking", userId, speaking: false }));

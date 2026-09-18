@@ -40,22 +40,54 @@ export async function loadOpus() {
 
   const script = await import("opusscript");
   const OpusScript = script.default?.default ?? script.default;
+
+  /**
+   * opusscript's codecs all share one WebAssembly instance and its memory.
+   * Certain malformed packets (Discord's own silence marker among them, if it
+   * reaches decode()) trip an internal assertion that aborts that instance —
+   * not just the one codec, every codec built from this `loadOpus()` call, for
+   * the rest of the process. Once that happens every further call throws
+   * "memory access out of bounds", forever, which without this guard means
+   * hundreds of failing decodes a second for no reason. The guard turns that
+   * into one clear error instead.
+   */
+  let poisoned = false;
+  const guard = (fn) => {
+    if (poisoned) throw new Error("the Opus codec crashed earlier; restart the worker to recover voice");
+    try {
+      return fn();
+    } catch (cause) {
+      if (isFatalWasmError(cause)) poisoned = true;
+      throw cause;
+    }
+  };
+
   return {
     name: "opusscript",
     createDecoder() {
-      const codec = new OpusScript(SAMPLE_RATE, CHANNELS, OpusScript.Application.AUDIO);
+      const codec = guard(() => new OpusScript(SAMPLE_RATE, CHANNELS, OpusScript.Application.AUDIO));
       return {
-        decode: (packet) => Buffer.from(codec.decode(packet)),
-        destroy: () => codec.delete?.(),
+        decode: (packet) => guard(() => Buffer.from(codec.decode(packet))),
+        destroy: () => guard(() => codec.delete?.()),
       };
     },
     createEncoder() {
-      const codec = new OpusScript(SAMPLE_RATE, CHANNELS, OpusScript.Application.AUDIO);
+      const codec = guard(() => new OpusScript(SAMPLE_RATE, CHANNELS, OpusScript.Application.AUDIO));
       return {
         // opusscript wants the frame size in samples per channel.
-        encode: (pcm) => Buffer.from(codec.encode(pcm, FRAME_SAMPLES)),
-        destroy: () => codec.delete?.(),
+        encode: (pcm) => guard(() => Buffer.from(codec.encode(pcm, FRAME_SAMPLES))),
+        destroy: () => guard(() => codec.delete?.()),
       };
     },
   };
+}
+
+/** Emscripten's own signs that the whole module, not just one call, is dead. */
+function isFatalWasmError(cause) {
+  const message = String(cause?.message ?? cause);
+  return (
+    message.includes("memory access out of bounds") ||
+    message.includes("Aborted") ||
+    cause?.name === "RuntimeError"
+  );
 }
