@@ -49,7 +49,7 @@ next-env.d.ts
 AGENTS.md
 CLAUDE.md
 
-/brag-output
+/brag-output*
 # generated Prisma client (recreated by `prisma generate` on install)
 /src/generated
 
