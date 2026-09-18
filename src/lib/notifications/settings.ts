@@ -72,7 +72,12 @@ export function getServerSettings(): NotificationSettings {
 }
 
 export function setSettings(next: NotificationSettings) {
-  localStorage.setItem(NOTIFICATION_STORAGE_KEY, JSON.stringify(next));
+  const serialized = JSON.stringify(next);
+  // Writing back exactly what was already stored must not notify: a listener
+  // that reacts by re-syncing would otherwise re-trigger itself forever over
+  // an update that changed nothing.
+  if (serialized === localStorage.getItem(NOTIFICATION_STORAGE_KEY)) return;
+  localStorage.setItem(NOTIFICATION_STORAGE_KEY, serialized);
   for (const listener of listeners) listener();
 }
 

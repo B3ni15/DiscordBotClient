@@ -250,7 +250,18 @@ export class Session {
       const stream = receiver.subscribe(userId, {
         end: { behavior: EndBehaviorType.AfterSilence, duration: 400 },
       });
-      const decoder = this.#opus.createDecoder();
+
+      let decoder;
+      try {
+        decoder = this.#opus.createDecoder();
+      } catch (cause) {
+        // A second (or third...) concurrent decoder is exactly what a busier
+        // channel needs, so a codec that cannot be built for it must not take
+        // the whole connection down with it.
+        this.#log(`could not create a decoder for ${userId}: ${cause.message}`);
+        stream.destroy();
+        return;
+      }
       this.#decoders.set(userId, decoder);
 
       stream.on("data", (packet) => {
