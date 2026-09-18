@@ -30,9 +30,30 @@ export const maxDuration = 300;
 const EXPIRY_WARNING_MS = 20_000;
 /** 20 ms of 48 kHz stereo is 3840 bytes; the cap leaves room to spare. */
 const MAX_PAYLOAD_BYTES = 64 * 1024;
+/** Time given for every socket to see the warning and start reconnecting. */
+const CRASH_RECONNECT_GRACE_MS = 2_000;
 
 const opus = loadOpus();
 let nextSessionId = 1;
+/** Every socket this instance currently holds open, so a crash can warn all of them at once. */
+const openSockets = new Set<WebSocket>();
+
+opus.then((resolved) => {
+  resolved.onFatalCrash(() => {
+    // opusscript's codec is process-wide and, once it dies, dead for good: no
+    // call into it will ever work again. The only real fix is a fresh process,
+    // so every call this instance is holding is sent home the same way an
+    // expiring instance already sends them — a graceful heads-up, not a cut
+    // wire — and then the process exits so Vercel starts a clean one.
+    console.error("voice bridge: the Opus codec crashed; recycling this instance");
+    for (const socket of openSockets) {
+      if (socket.readyState === socket.OPEN) {
+        socket.send(JSON.stringify({ t: "expiring", inMs: 0 }));
+      }
+    }
+    setTimeout(() => process.exit(1), CRASH_RECONNECT_GRACE_MS);
+  });
+});
 
 export async function GET(request: Request) {
   const denied = originProblem(request);
@@ -61,6 +82,7 @@ function upgrade(id: string, resolvedOpus: Awaited<ReturnType<typeof loadOpus>>)
       const session = new Session(socket, { log, opus: resolvedOpus, id });
 
       socket.send(JSON.stringify({ t: "hello", v: 1, opus: resolvedOpus.name, hosted: true }));
+      openSockets.add(socket);
 
       // The page cannot see the deadline, so it is told about it: a graceful
       // reconnect a few seconds early beats being cut off mid-sentence.
@@ -78,6 +100,7 @@ function upgrade(id: string, resolvedOpus: Awaited<ReturnType<typeof loadOpus>>)
       );
       socket.on("close", () => {
         clearTimeout(warning);
+        openSockets.delete(socket);
         session.dispose();
       });
       socket.on("error", (cause: Error) => log(`socket error: ${cause.message}`));

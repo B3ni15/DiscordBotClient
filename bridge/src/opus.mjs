@@ -14,7 +14,12 @@ import { CHANNELS, FRAME_SAMPLES, SAMPLE_RATE } from "./protocol.mjs";
 /**
  * @typedef {{ decode: (packet: Buffer) => Buffer, destroy: () => void }} OpusDecoder
  * @typedef {{ encode: (pcm: Buffer) => Buffer, destroy: () => void }} OpusEncoderHandle
- * @returns {Promise<{ name: string, createDecoder: () => OpusDecoder, createEncoder: () => OpusEncoderHandle }>}
+ * @returns {Promise<{
+ *   name: string,
+ *   onFatalCrash: (listener: () => void) => void,
+ *   createDecoder: () => OpusDecoder,
+ *   createEncoder: () => OpusEncoderHandle,
+ * }>}
  */
 export async function loadOpus() {
   try {
@@ -24,6 +29,9 @@ export async function loadOpus() {
     if (!OpusEncoder) throw new Error("no OpusEncoder export");
     return {
       name: "@discordjs/opus",
+      // Each instance owns its own native state; one going bad does not take
+      // the others down with it, so there is nothing here to listen for.
+      onFatalCrash() {},
       createDecoder() {
         // One codec per speaker: Opus carries state from packet to packet.
         const codec = new OpusEncoder(SAMPLE_RATE, CHANNELS);
@@ -52,18 +60,31 @@ export async function loadOpus() {
    * into one clear error instead.
    */
   let poisoned = false;
+  let crashListener = null;
   const guard = (fn) => {
     if (poisoned) throw new Error("the Opus codec crashed earlier; restart the worker to recover voice");
     try {
       return fn();
     } catch (cause) {
-      if (isFatalWasmError(cause)) poisoned = true;
+      if (isFatalWasmError(cause) && !poisoned) {
+        poisoned = true;
+        crashListener?.();
+      }
       throw cause;
     }
   };
 
   return {
     name: "opusscript",
+    /**
+     * Fires once, the first time the shared codec dies. There is no repairing
+     * it from inside this process — every instance it ever hands out shares
+     * the same dead memory — so the only real recovery is a fresh process,
+     * which this exists to let the caller ask for.
+     */
+    onFatalCrash(listener) {
+      crashListener = listener;
+    },
     createDecoder() {
       const codec = guard(() => new OpusScript(SAMPLE_RATE, CHANNELS, OpusScript.Application.AUDIO));
       return {
