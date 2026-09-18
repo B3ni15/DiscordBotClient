@@ -89,7 +89,12 @@ export function getServerDMs(): StoredDM[] {
 }
 
 export function setDMs(next: StoredDM[]) {
-  localStorage.setItem(DM_STORAGE_KEY, JSON.stringify(next));
+  const serialized = JSON.stringify(next);
+  // A sync that resolves to exactly what was already stored must not notify:
+  // a listener that re-syncs on every change would otherwise re-trigger
+  // itself forever over an update that changed nothing.
+  if (serialized === localStorage.getItem(DM_STORAGE_KEY)) return;
+  localStorage.setItem(DM_STORAGE_KEY, serialized);
   cacheSource = null;
   for (const listener of listeners) listener();
 }
