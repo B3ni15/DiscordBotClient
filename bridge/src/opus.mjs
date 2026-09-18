@@ -14,7 +14,12 @@ import { CHANNELS, FRAME_SAMPLES, SAMPLE_RATE } from "./protocol.mjs";
 /**
  * @typedef {{ decode: (packet: Buffer) => Buffer, destroy: () => void }} OpusDecoder
  * @typedef {{ encode: (pcm: Buffer) => Buffer, destroy: () => void }} OpusEncoderHandle
- * @returns {Promise<{ name: string, createDecoder: () => OpusDecoder, createEncoder: () => OpusEncoderHandle }>}
+ * @returns {Promise<{
+ *   name: string,
+ *   onFatalCrash: (listener: () => void) => void,
+ *   createDecoder: () => OpusDecoder,
+ *   createEncoder: () => OpusEncoderHandle,
+ * }>}
  */
 export async function loadOpus() {
   try {
