@@ -20,6 +20,18 @@ export const AUDIO_OUT = 0x01; // browser -> bridge -> Discord, as PCM
 export const AUDIO_IN = 0x02; // Discord -> bridge -> browser, as PCM
 export const AUDIO_OUT_OPUS = 0x03; // browser -> bridge -> Discord, already Opus
 
+/**
+ * Discord's own silence marker: sent instead of a real Opus frame when a
+ * speaker briefly stops rather than closing their stream outright. It is not
+ * audio and some decoders — opusscript among them — do not take kindly to
+ * being handed it.
+ */
+const SILENCE_MARKER = Buffer.from([0xf8, 0xff, 0xfe]);
+
+export function isSilenceMarker(packet) {
+  return Buffer.isBuffer(packet) && SILENCE_MARKER.equals(packet);
+}
+
 /** Wraps decoded PCM from one speaker, tagged with the user it came from. */
 export function encodeIncomingAudio(userId, pcm) {
   const frame = Buffer.allocUnsafe(9 + pcm.length);
