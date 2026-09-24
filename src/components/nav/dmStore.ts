@@ -173,7 +173,12 @@ export function claimDMs(botId: string, channelIds: string[]) {
  * current payload is thinner — a `createDM` response, for instance, carries far
  * less than a guild member object.
  */
-export function rememberDM(channel: DMChannel, about: DMUserInfo = {}): StoredDM | undefined {
+export function rememberDM(
+  channel: DMChannel,
+  about: DMUserInfo = {},
+  /** When the conversation was last active, if not right now. */
+  at?: number,
+): StoredDM | undefined {
   // Only the signed-in bot can see a DM channel, so it is the one it belongs to.
   const botId = owner;
   if (!botId) return undefined;
@@ -205,7 +210,7 @@ export function rememberDM(channel: DMChannel, about: DMUserInfo = {}): StoredDM
     roles: about.roles ?? previous?.roles,
   };
 
-  const now = Date.now();
+  const now = at ?? Date.now();
   const entry: StoredDM = {
     ...merged,
     channelId: channel.id,
@@ -213,8 +218,8 @@ export function rememberDM(channel: DMChannel, about: DMUserInfo = {}): StoredDM
     recipientId: id,
     name: merged.nick || merged.globalName || merged.username || previous?.name || id,
     avatar: merged.avatar ?? null,
-    openedAt: previous?.openedAt ?? now,
-    lastUsedAt: now,
+    openedAt: previous?.openedAt ?? Date.now(),
+    lastUsedAt: Math.max(now, previous?.lastUsedAt ?? 0),
     note: previous?.note,
   };
 

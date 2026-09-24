@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useSyncExternalStore, type FormEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { BotTag } from "@/components/ui/BotTag";
 import { Spinner } from "@/components/ui/Spinner";
 import { UserPanel } from "@/components/UserPanel";
 import { userAvatarUrl } from "@/lib/discord/cdn";
+import { DiscordHTTPError } from "@/lib/discord/rest";
 import { useClient } from "@/lib/store/client";
+import { scanGuildDMs, type DMScanProgress } from "./dmScan";
 import {
   forgetDM,
   getDMs,
@@ -111,6 +113,8 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
         </button>
         {error && <p className="animate-fade-in text-xs leading-relaxed text-danger">{error}</p>}
       </form>
+
+      <DMScanner />
 
       <div className="min-h-0 flex-1 animate-sidebar-in overflow-y-auto px-2 pb-2">
         {entries.length === 0 ? (
@@ -224,6 +228,136 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
     <div className="flex gap-2">
       <dt className="w-24 shrink-0 text-muted">{label}</dt>
       <dd className="min-w-0 flex-1 text-text">{children}</dd>
+    </div>
+  );
+}
+
+/** Every server, or one picked by id. */
+const ALL_GUILDS = "all";
+
+/**
+ * Looks through the members of the bot's servers for DMs it already has, so a
+ * conversation started elsewhere (or in another browser) shows up here too.
+ */
+function DMScanner() {
+  const guilds = useClient((state) => state.guilds);
+  const guildOrder = useClient((state) => state.guildOrder);
+  const selfId = useClient((state) => state.user?.id);
+  const getRest = useClient((state) => state.getRest);
+
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState(ALL_GUILDS);
+  const [progress, setProgress] = useState<DMScanProgress | null>(null);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const controller = useRef<AbortController | null>(null);
+
+  // A scan must not outlive the panel (or the bot) that started it.
+  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    controller.current?.abort();
+  }, [selfId]);
+
+  async function start() {
+    if (!selfId) return;
+    const picked = (target === ALL_GUILDS ? guildOrder : [target])
+      .map((id) => guilds[id])
+      .filter(Boolean);
+    if (picked.length === 0) return;
+
+    const abort = new AbortController();
+    controller.current = abort;
+    setRunning(true);
+    setResult(null);
+    setProgress(null);
+    try {
+      const done = await scanGuildDMs(getRest(), picked, selfId, {
+        signal: abort.signal,
+        onProgress: setProgress,
+      });
+      setResult(`Checked ${done.checked} members, found ${done.found} new DMs.`);
+    } catch (cause) {
+      if (abort.signal.aborted) {
+        setResult("Stopped. DMs found so far were kept.");
+      } else if (cause instanceof DiscordHTTPError && cause.status === 403) {
+        setResult(
+          "Discord refused the member list. Turn on the Server Members intent for this bot in the Developer Portal.",
+        );
+      } else {
+        setResult(cause instanceof Error ? cause.message : "The scan failed.");
+      }
+    } finally {
+      if (controller.current === abort) controller.current = null;
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="shrink-0 px-3 pb-3">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="text-[11px] font-bold tracking-wide text-muted uppercase transition-colors hover:text-text"
+      >
+        {open ? "▾" : "▸"} Find existing DMs
+      </button>
+
+      {open && (
+        <div className="mt-2 flex animate-fade-in flex-col gap-2">
+          <p className="text-[11px] leading-relaxed text-faint">
+            Opens a DM with every member of the chosen servers and lists the ones that already
+            have messages. Large servers take a while because of Discord&apos;s rate limits.
+          </p>
+          <select
+            value={target}
+            onChange={(event) => setTarget(event.target.value)}
+            disabled={running}
+            aria-label="Servers to search"
+            className="rounded bg-ink px-2 py-1.5 text-sm text-text outline-none focus:shadow-[0_0_0_1px_var(--accent)] disabled:opacity-60"
+          >
+            <option value={ALL_GUILDS}>All servers</option>
+            {guildOrder.map((id) =>
+              guilds[id] ? (
+                <option key={id} value={id}>
+                  {guilds[id].name}
+                </option>
+              ) : null,
+            )}
+          </select>
+          {running ? (
+            <button
+              type="button"
+              onClick={() => controller.current?.abort()}
+              className="rounded bg-raised px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-hover"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void start()}
+              disabled={!selfId || guildOrder.length === 0}
+              className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-strong disabled:opacity-60"
+            >
+              Search
+            </button>
+          )}
+          {running && (
+            <p className="flex items-center gap-2 text-xs text-muted">
+              <Spinner size={12} />
+              <span className="min-w-0 truncate">
+                {progress
+                  ? `${progress.guildName}: ${progress.checked} checked, ${progress.found} found`
+                  : "Starting…"}
+              </span>
+            </p>
+          )}
+          {result && !running && (
+            <p className="animate-fade-in text-xs leading-relaxed text-muted">{result}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
