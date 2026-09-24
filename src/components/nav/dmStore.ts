@@ -15,6 +15,12 @@
  */
 
 export const DM_STORAGE_KEY = "disbotclient:dms";
+/**
+ * Channels the user removed, with when: `channelId -> removedAt`. Kept so a
+ * vault sync (or another browser) does not bring a removed DM straight back.
+ * Only activity newer than the removal lists the conversation again.
+ */
+export const DM_REMOVED_KEY = "disbotclient:dms-removed";
 
 /** What is known about a DM recipient at the moment the DM is opened. */
 export interface DMUserInfo {
@@ -77,15 +83,22 @@ let ownCache: StoredDM[] = EMPTY;
 let ownCacheFor: { all: StoredDM[]; owner: string | null } | null = null;
 /** The bot currently signed in; null shows no DMs at all. */
 let owner: string | null = null;
+let removedCache: Record<string, number> = {};
+let removedSource: string | null = null;
 const listeners = new Set<() => void>();
 
 export function subscribeDMs(listener: () => void) {
   listeners.add(listener);
-  // Another tab may write the same key.
-  window.addEventListener("storage", listener);
+  // Another tab may write the same key; writes to any other key are not ours.
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === DM_STORAGE_KEY || event.key === DM_REMOVED_KEY || event.key === null) {
+      listener();
+    }
+  };
+  window.addEventListener("storage", onStorage);
   return () => {
     listeners.delete(listener);
-    window.removeEventListener("storage", listener);
+    window.removeEventListener("storage", onStorage);
   };
 }
 
@@ -138,9 +151,27 @@ export function setAllDMs(next: StoredDM[]) {
   notify();
 }
 
-/** Drops a DM from the list. */
+/** Drops a DM from the list, and remembers that it was removed. */
 export function forgetDM(channelId: string) {
+  setRemovedDMs({ ...getRemovedDMs(), [channelId]: Date.now() });
   setAllDMs(getAllDMs().filter((entry) => entry.channelId !== channelId));
+}
+
+/** Every removed channel and when it was removed. Stable while the JSON is unchanged. */
+export function getRemovedDMs(): Record<string, number> {
+  const raw = localStorage.getItem(DM_REMOVED_KEY);
+  if (raw === removedSource) return removedCache;
+  removedSource = raw;
+  removedCache = parseRemoved(raw);
+  return removedCache;
+}
+
+export function setRemovedDMs(next: Record<string, number>) {
+  const serialized = JSON.stringify(next);
+  if (serialized === (localStorage.getItem(DM_REMOVED_KEY) ?? "{}")) return;
+  localStorage.setItem(DM_REMOVED_KEY, serialized);
+  removedSource = null;
+  notify();
 }
 
 export function getDM(channelId: string): StoredDM | undefined {
@@ -211,6 +242,17 @@ export function rememberDM(
   };
 
   const now = at ?? Date.now();
+  // A removed DM only comes back for activity after the removal, so a scan
+  // turning up its old messages does not undo it.
+  const removed = getRemovedDMs();
+  const removedAt = removed[channel.id];
+  if (removedAt !== undefined) {
+    if (Math.max(now, previous?.lastUsedAt ?? 0) <= removedAt) return undefined;
+    const { [channel.id]: _dropped, ...rest } = removed;
+    void _dropped;
+    setRemovedDMs(rest);
+  }
+
   const entry: StoredDM = {
     ...merged,
     channelId: channel.id,
@@ -242,6 +284,18 @@ export function setDMNote(channelId: string, note: string) {
       entry.channelId === channelId ? { ...entry, note: trimmed || undefined } : entry,
     ),
   );
+}
+
+function parseRemoved(raw: string | null): Record<string, number> {
+  try {
+    const parsed: unknown = raw ? JSON.parse(raw) : {};
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, number] => typeof entry[1] === "number"),
+    );
+  } catch {
+    return {};
+  }
 }
 
 function parse(raw: string | null): StoredDM[] {

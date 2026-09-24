@@ -1,7 +1,14 @@
 "use client";
 
 import { create } from "zustand";
-import { getAllDMs, setAllDMs, subscribeDMs, type StoredDM } from "@/components/nav/dmStore";
+import {
+  getAllDMs,
+  getRemovedDMs,
+  setAllDMs,
+  setRemovedDMs,
+  subscribeDMs,
+  type StoredDM,
+} from "@/components/nav/dmStore";
 import {
   getSettings,
   setSettings,
@@ -101,6 +108,18 @@ const EMPTY_SALT = new Uint8Array(new ArrayBuffer(0)) as Bytes;
 /** Stops the live sync subscriptions; null while nothing is subscribed. */
 let stopWatching: (() => void) | null = null;
 
+/**
+ * What the DM list and the preferences looked like the last time they matched
+ * the vault. A change notification that leaves them equal to this (the sync's
+ * own write, a bot switch, another tab echoing the same list) needs no request.
+ */
+let syncedDMs: string | null = null;
+let syncedSettings: string | null = null;
+
+/** The DM sync running right now, and whether another was asked for meanwhile. */
+let dmSync: Promise<void> | null = null;
+let dmSyncAgain = false;
+
 /** The vault key lives here, outside React state, and never in storage. */
 let vaultKey: CryptoKey | null = null;
 
@@ -145,10 +164,7 @@ export const useAccount = create<AccountState>((set, get) => ({
         await loadItems(set);
         await get().syncDMs();
         await get().syncSettings();
-        startWatching(() => {
-          void get().syncDMs();
-          void pushSettings();
-        });
+        startWatching(get);
         return;
       }
       set({ status: "locked" });
@@ -219,10 +235,7 @@ export const useAccount = create<AccountState>((set, get) => ({
       // Whatever this browser already had becomes the vault's first contents.
       await get().syncDMs();
       await pushSettings();
-      startWatching(() => {
-        void get().syncDMs();
-        void pushSettings();
-      });
+      startWatching(get);
     } catch (cause) {
       vaultKey = null;
       set({ busy: false, error: message(cause, "Could not set the vault up.") });
@@ -390,7 +403,9 @@ export const useAccount = create<AccountState>((set, get) => ({
       if (stored) {
         try {
           // Whatever was saved last wins; preferences are not worth a merge.
-          setSettings(await decryptJson<NotificationSettings>(vaultKey, stored.ciphertext));
+          const remote = await decryptJson<NotificationSettings>(vaultKey, stored.ciphertext);
+          setSettings(remote);
+          syncedSettings = JSON.stringify(getSettings());
         } catch {
           // Written under another key.
         }
@@ -403,37 +418,20 @@ export const useAccount = create<AccountState>((set, get) => ({
   },
 
   syncDMs: async () => {
-    if (!vaultKey) return;
-    try {
-      const { items } = await vaultApi.items();
-      const remote: StoredDM[] = [];
-      for (const item of items) {
-        if (item.kind !== "dm") continue;
-        try {
-          remote.push(await decryptJson<StoredDM>(vaultKey, item.ciphertext));
-        } catch {
-          // A record this key cannot open is not ours to touch.
-        }
-      }
-
-      const merged = mergeDMs(getAllDMs(), remote);
-      setAllDMs(merged);
-
-      const payload = [];
-      for (const dm of merged) {
-        payload.push({
-          kind: "dm",
-          ref: await itemRef(vaultKey, "dm", dm.channelId),
-          ciphertext: await encryptJson(vaultKey, dm),
-        });
-      }
-      // The endpoint takes batches; a DM list this long is already unusual.
-      for (let index = 0; index < payload.length; index += 100) {
-        await vaultApi.putItems(payload.slice(index, index + 100));
-      }
-    } catch (cause) {
-      set({ error: message(cause, "Could not sync direct messages.") });
+    // One sync at a time; anything asked for meanwhile is folded into one more.
+    if (dmSync) {
+      dmSyncAgain = true;
+      return dmSync;
     }
+    dmSync = (async () => {
+      do {
+        dmSyncAgain = false;
+        await syncDMsOnce(set);
+      } while (dmSyncAgain && vaultKey);
+    })().finally(() => {
+      dmSync = null;
+    });
+    return dmSync;
   },
 }));
 
@@ -444,33 +442,50 @@ type Setter = (partial: Partial<AccountState> | ((state: AccountState) => Partia
  * the DM list or the preferences do locally is encrypted and pushed after a
  * short pause, so a burst of changes costs one request.
  */
-function startWatching(push: () => void) {
+function startWatching(get: () => AccountState) {
   stopWatching?.();
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const schedule = () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(push, 1500);
-  };
-  const unsubscribeDMs = subscribeDMs(schedule);
-  const unsubscribeSettings = subscribeSettings(schedule);
+  let dmTimer: ReturnType<typeof setTimeout> | null = null;
+  let settingsTimer: ReturnType<typeof setTimeout> | null = null;
+  const unsubscribeDMs = subscribeDMs(() => {
+    if (dmTimer) clearTimeout(dmTimer);
+    dmTimer = setTimeout(() => {
+      dmTimer = null;
+      if (dmSnapshot() !== syncedDMs) void get().syncDMs();
+    }, 1500);
+  });
+  const unsubscribeSettings = subscribeSettings(() => {
+    if (settingsTimer) clearTimeout(settingsTimer);
+    settingsTimer = setTimeout(() => {
+      settingsTimer = null;
+      if (JSON.stringify(getSettings()) !== syncedSettings) void pushSettings();
+    }, 1500);
+  });
   stopWatching = () => {
-    if (timer) clearTimeout(timer);
+    if (dmTimer) clearTimeout(dmTimer);
+    if (settingsTimer) clearTimeout(settingsTimer);
     unsubscribeDMs();
     unsubscribeSettings();
+    syncedDMs = null;
+    syncedSettings = null;
   };
 }
 
 /** Encrypts the current preferences into the vault. */
 async function pushSettings() {
   if (!vaultKey) return;
+  const settings = getSettings();
+  const serialized = JSON.stringify(settings);
   await vaultApi
     .putItems([
       {
         kind: "settings",
         ref: await itemRef(vaultKey, "settings", "notifications"),
-        ciphertext: await encryptJson(vaultKey, getSettings()),
+        ciphertext: await encryptJson(vaultKey, settings),
       },
     ])
+    .then(() => {
+      syncedSettings = serialized;
+    })
     .catch(() => {});
 }
 
@@ -489,10 +504,7 @@ async function finishUnlock(
   await loadItems(set);
   await get().syncDMs();
   await get().syncSettings();
-  startWatching(() => {
-    void get().syncDMs();
-    void pushSettings();
-  });
+  startWatching(get);
 }
 
 async function unlockWithText(
@@ -580,6 +592,85 @@ function byLastUsed(a: SavedBot, b: SavedBot): number {
   return b.lastUsedAt - a.lastUsedAt;
 }
 
+/**
+ * Merges this browser's DM list with the vault's and writes back only the
+ * records the vault does not already hold in that exact form.
+ */
+async function syncDMsOnce(set: Setter) {
+  const key = vaultKey;
+  if (!key) return;
+  try {
+    const { items } = await vaultApi.items();
+    const remote: StoredDM[] = [];
+    const removed = { ...getRemovedDMs() };
+    /** What the vault holds per channel, to skip rewriting unchanged records. */
+    const remoteJson = new Map<string, string>();
+    for (const item of items) {
+      if (item.kind !== "dm") continue;
+      try {
+        const record = await decryptJson<StoredDM | RemovedDM>(key, item.ciphertext);
+        remoteJson.set(record.channelId, JSON.stringify(record));
+        if (isRemoved(record)) {
+          removed[record.channelId] = Math.max(removed[record.channelId] ?? 0, record.removedAt);
+        } else {
+          remote.push(record);
+        }
+      } catch {
+        // A record this key cannot open is not ours to touch.
+      }
+    }
+
+    // A removal wins over every copy older than it; newer activity undoes it.
+    const merged = mergeDMs(getAllDMs(), remote).filter((dm) => {
+      const removedAt = removed[dm.channelId];
+      if (removedAt === undefined) return true;
+      if (dm.lastUsedAt > removedAt) {
+        delete removed[dm.channelId];
+        return true;
+      }
+      return false;
+    });
+    setRemovedDMs(removed);
+    setAllDMs(merged);
+
+    const records: Array<StoredDM | RemovedDM> = [
+      ...merged,
+      ...Object.entries(removed).map(([channelId, removedAt]) => ({ channelId, removedAt })),
+    ];
+    const payload = [];
+    for (const record of records) {
+      if (remoteJson.get(record.channelId) === JSON.stringify(record)) continue;
+      payload.push({
+        kind: "dm",
+        ref: await itemRef(key, "dm", record.channelId),
+        ciphertext: await encryptJson(key, record),
+      });
+    }
+    // The endpoint takes batches; a DM list this long is already unusual.
+    for (let index = 0; index < payload.length; index += 100) {
+      await vaultApi.putItems(payload.slice(index, index + 100));
+    }
+    syncedDMs = dmSnapshot();
+  } catch (cause) {
+    set({ error: message(cause, "Could not sync direct messages.") });
+  }
+}
+
+/** What a removed DM leaves in the vault, under the same reference it had. */
+interface RemovedDM {
+  channelId: string;
+  removedAt: number;
+}
+
+function isRemoved(record: StoredDM | RemovedDM): record is RemovedDM {
+  return typeof (record as RemovedDM).removedAt === "number" && !("recipientId" in record);
+}
+
+/** The DM list and its removals, as compared against the last sync. */
+function dmSnapshot(): string {
+  return JSON.stringify([getAllDMs(), getRemovedDMs()]);
+}
+
 /** Local and remote DM lists, with the more recently used copy winning. */
 function mergeDMs(local: StoredDM[], remote: StoredDM[]): StoredDM[] {
   const byChannel = new Map<string, StoredDM>();
@@ -591,7 +682,12 @@ function mergeDMs(local: StoredDM[], remote: StoredDM[]): StoredDM[] {
     const botId = winner.botId ?? dm.botId ?? existing?.botId;
     byChannel.set(dm.channelId, botId ? { ...winner, botId } : winner);
   }
-  return [...byChannel.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+  // Ties fall back to the channel id: the vault hands records back in whatever
+  // order they were last written, and an order that flips between syncs would
+  // look like a change and trigger yet another sync.
+  return [...byChannel.values()].sort(
+    (a, b) => b.lastUsedAt - a.lastUsedAt || (a.channelId < b.channelId ? -1 : a.channelId > b.channelId ? 1 : 0),
+  );
 }
 
 function message(cause: unknown, fallback: string): string {

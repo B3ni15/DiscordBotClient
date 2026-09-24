@@ -170,6 +170,15 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
                     >
                       <span aria-hidden>ⓘ</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => remove(entry.channelId)}
+                      aria-label={`Remove the DM with ${entry.name}`}
+                      title="Remove from Direct Messages"
+                      className="shrink-0 rounded px-1.5 py-1 text-sm leading-none text-muted opacity-0 transition-opacity hover:text-danger group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <span aria-hidden>×</span>
+                    </button>
                   </div>
 
                   {isOpen && (
@@ -206,7 +215,7 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
                           onClick={() => remove(entry.channelId)}
                           className="mt-2 rounded px-1 text-[11px] text-muted transition-colors hover:text-danger"
                         >
-                          Forget this conversation
+                          Remove this conversation
                         </button>
                       </div>
                     </dl>

@@ -66,7 +66,7 @@ export async function scanGuildDMs(
             // One member Discord will not open a DM with is no reason to stop.
           }
           if (channel?.last_message_id) {
-            rememberDM(
+            const listed = rememberDM(
               channel,
               {
                 username: user.username,
@@ -84,7 +84,8 @@ export async function scanGuildDMs(
               },
               snowflakeTime(channel.last_message_id),
             );
-            progress.found++;
+            // Removed DMs with nothing new since stay removed.
+            if (listed) progress.found++;
           }
         }
         onProgress?.({ ...progress });
