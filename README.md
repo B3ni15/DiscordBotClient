@@ -49,6 +49,7 @@ It runs entirely from the browser, connects directly to the Discord Gateway, and
 | 💬 | **Messaging** | Read, send, reply to, edit, delete, pin and react to messages |
 | ⚡ | **Live Gateway** | Real-time messages, edits, deletes, reactions and typing events |
 | 🧵 | **Threads** | Browse active threads and create new threads |
+| 📊 | **Polls** | Create polls, see live vote counts and voters, end the bot's own polls |
 | 🔎 | **Search** | Discord search when available, with a loaded-history fallback |
 | 👥 | **Members** | Online/offline members, roles, statuses and activities |
 | 🏷️ | **Badges** | Public Discord badges and server-booster status where exposed |
@@ -100,6 +101,7 @@ DisbotClient provides a full Discord-style messaging experience with:
 - Live Gateway events
 - New messages, edits and deletes
 - Reactions and typing indicators
+- Polls with live vote counts
 - Replies
 - Message editing and deletion
 - Pinning
@@ -154,6 +156,10 @@ Badges use Discord's public flag information where available and are displayed u
 ### Threads
 
 Browse active threads directly from the channel interface and create new threads when the bot has the required permissions.
+
+### Polls
+
+The 📊 button next to the message box opens a poll dialog: a question, up to ten answers, a duration and an optional multi-answer mode. Polls in the channel render with a bar per answer, the vote count, the remaining time and the winner once closed. Clicking an answer lists who voted for it, and a poll the bot started can be ended early. Bots cannot vote themselves; that is a Discord restriction.
 
 ### Pinned messages
 

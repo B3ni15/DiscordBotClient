@@ -4,6 +4,8 @@ import type {
   APIGuildMember,
   APIMessage,
   APIUser,
+  RESTAPIPoll,
+  RESTGetAPIPollAnswerVotersResult,
   RESTPostAPIChannelMessageJSONBody,
 } from "discord-api-types/v10";
 import type { RestClient } from "./rest";
@@ -62,6 +64,26 @@ export const api = {
     files.forEach((file, index) => form.append(`files[${index}]`, file, file.name));
     return rest.post<APIMessage>(`/channels/${channelId}/messages`, { form });
   },
+
+  /** A message that is only a poll; Discord does not allow a poll to be edited later. */
+  sendPoll: (rest: RestClient, channelId: string, poll: RESTAPIPoll) =>
+    rest.post<APIMessage>(`/channels/${channelId}/messages`, { body: { poll } }),
+
+  /** Closes a poll the bot started before its timer runs out. */
+  endPoll: (rest: RestClient, channelId: string, messageId: string) =>
+    rest.post<APIMessage>(`/channels/${channelId}/polls/${messageId}/expire`),
+
+  pollVoters: (
+    rest: RestClient,
+    channelId: string,
+    messageId: string,
+    answerId: number,
+    options: { limit?: number; after?: string } = {},
+  ) =>
+    rest.get<RESTGetAPIPollAnswerVotersResult>(
+      `/channels/${channelId}/polls/${messageId}/answers/${answerId}`,
+      { query: { limit: options.limit ?? 100, after: options.after } },
+    ),
 
   editMessage: (rest: RestClient, channelId: string, messageId: string, content: string) =>
     rest.patch<APIMessage>(`/channels/${channelId}/messages/${messageId}`, { body: { content } }),

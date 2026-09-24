@@ -1,20 +1,25 @@
 "use client";
 
-import type { APIMessage } from "discord-api-types/v10";
+import { MessageType, type APIMessage } from "discord-api-types/v10";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { Markdown } from "@/lib/markdown";
 import { useClient } from "@/lib/store/client";
 import { Attachments } from "./Attachments";
 import { contentIsOnlyEmbedLinks } from "./embedMedia";
 import { EmbedCard } from "./EmbedCard";
+import { PollCard, PollResultNotice } from "./PollCard";
 
 export interface MessageContentProps {
   message: APIMessage;
 }
 
-/** Full body of one message: reply preview, markdown, embeds and attachments. */
+/** Full body of one message: reply preview, markdown, poll, embeds and attachments. */
 export function MessageContent({ message }: MessageContentProps) {
   const guildId = useMessageGuildId(message);
+
+  // Its reference and embed only exist to feed this one line.
+  if (message.type === MessageType.PollResult) return <PollResultNotice message={message} />;
+
   const edited = message.edited_timestamp;
   /*
    * A message that is only a link to an image shows the image and not the link:
@@ -50,6 +55,8 @@ export function MessageContent({ message }: MessageContentProps) {
       ) : (
         editedMarker
       )}
+
+      {message.poll && <PollCard message={message} poll={message.poll} />}
 
       {message.attachments?.length > 0 && <Attachments attachments={message.attachments} />}
 
@@ -96,6 +103,8 @@ function ReplyPreview({ message, guildId }: { message: APIMessage; guildId: stri
       <span className="min-w-0 truncate">
         {preview ? (
           <Markdown content={preview} guildId={guildId} inline />
+        ) : referenced.poll ? (
+          <span className="italic">📊 {referenced.poll.question.text ?? "Poll"}</span>
         ) : (
           <span className="italic">attachment or embed</span>
         )}

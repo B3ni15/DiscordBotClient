@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { APIMessage } from "discord-api-types/v10";
 import { EmojiPicker } from "@/components/actions/EmojiPicker";
+import { PollCreator } from "@/components/actions/PollCreator";
 import { Spinner } from "@/components/ui/Spinner";
 import { api } from "@/lib/discord/api";
 import { replyToMessage } from "@/lib/discord/messageActions";
@@ -35,6 +36,7 @@ export function Composer({
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pollOpen, setPollOpen] = useState(false);
   const lastTypingAt = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -216,6 +218,15 @@ export function Composer({
         >
           <span aria-hidden>🙂</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setPollOpen(true)}
+          aria-label="Create a poll"
+          title="Create a poll"
+          className="shrink-0 self-end pb-0.5 text-xl leading-none grayscale transition-all hover:scale-110 hover:grayscale-0"
+        >
+          <span aria-hidden>📊</span>
+        </button>
         <textarea
           ref={textarea}
           rows={1}
@@ -228,6 +239,8 @@ export function Composer({
         />
         {sending && <Spinner size={14} className="self-end pb-1 text-muted" label="Sending" />}
       </div>
+
+      {pollOpen && <PollCreator channelId={channelId} onClose={() => setPollOpen(false)} />}
 
       {error && (
         <p role="alert" className="mt-2 animate-fade-in text-xs text-danger">
