@@ -20,6 +20,8 @@ export const GatewayIntent = {
   DirectMessageTyping: 1 << 14,
   MessageContent: 1 << 15,
   GuildScheduledEvents: 1 << 16,
+  GuildMessagePolls: 1 << 24,
+  DirectMessagePolls: 1 << 25,
 } as const;
 
 /** Intents that must be enabled in the Developer Portal before they may be requested. */
@@ -43,6 +45,8 @@ export const DEFAULT_INTENTS =
   GatewayIntent.DirectMessages |
   GatewayIntent.DirectMessageReactions |
   GatewayIntent.DirectMessageTyping |
+  GatewayIntent.GuildMessagePolls |
+  GatewayIntent.DirectMessagePolls |
   GatewayIntent.MessageContent;
 
 /** Intents left when the bot has no privileged intents enabled. */

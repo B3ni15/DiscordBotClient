@@ -7,9 +7,11 @@ import type {
   APIGuild,
   APIGuildMember,
   APIMessage,
+  APIPoll,
   APIRole,
   APIUser,
   GatewayGuildCreateDispatchData,
+  GatewayMessagePollVoteDispatchData,
   GatewayMessageReactionAddDispatchData,
   GatewayMessageReactionRemoveDispatchData,
   GatewayTypingStartDispatchData,
@@ -871,6 +873,22 @@ function handleDispatch(
       }));
       break;
     }
+    case "MESSAGE_POLL_VOTE_ADD":
+    case "MESSAGE_POLL_VOTE_REMOVE": {
+      /*
+       * Discord only rewrites `poll.results` once the poll closes, so the live
+       * tally is kept here from the vote events.
+       */
+      const data = raw as GatewayMessagePollVoteDispatchData;
+      const delta = event === "MESSAGE_POLL_VOTE_ADD" ? 1 : -1;
+      const isSelf = data.user_id === get().user?.id;
+      set((state) => ({
+        messagesByChannel: mapMessage(state, data.channel_id, data.message_id, (message) =>
+          message.poll ? { ...message, poll: applyPollVote(message.poll, data.answer_id, delta, isSelf) } : message,
+        ),
+      }));
+      break;
+    }
     case "TYPING_START": {
       const data = raw as GatewayTypingStartDispatchData;
       if (data.user_id === get().user?.id) break;
@@ -992,6 +1010,24 @@ function mapMessage(
     ...state.messagesByChannel,
     [channelId]: messages.map((message) => (message.id === messageId ? update(message) : message)),
   };
+}
+
+function applyPollVote(poll: APIPoll, answerId: number, delta: number, isSelf: boolean): APIPoll {
+  // A finalized count is exact; a late vote event must not skew it.
+  if (poll.results?.is_finalized) return poll;
+  const counts = [...(poll.results?.answer_counts ?? [])];
+  const index = counts.findIndex((entry) => entry.id === answerId);
+  if (index === -1) {
+    if (delta > 0) counts.push({ id: answerId, count: 1, me_voted: isSelf });
+  } else {
+    const entry = counts[index];
+    counts[index] = {
+      ...entry,
+      count: Math.max(0, entry.count + delta),
+      me_voted: isSelf ? delta > 0 : entry.me_voted,
+    };
+  }
+  return { ...poll, results: { is_finalized: false, answer_counts: counts } };
 }
 
 function reactionKey(emoji: { id?: string | null; name?: string | null }) {
