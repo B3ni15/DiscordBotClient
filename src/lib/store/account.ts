@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { getDMs, setDMs, subscribeDMs, type StoredDM } from "@/components/nav/dmStore";
+import { getAllDMs, setAllDMs, subscribeDMs, type StoredDM } from "@/components/nav/dmStore";
 import {
   getSettings,
   setSettings,
@@ -416,8 +416,8 @@ export const useAccount = create<AccountState>((set, get) => ({
         }
       }
 
-      const merged = mergeDMs(getDMs(), remote);
-      setDMs(merged);
+      const merged = mergeDMs(getAllDMs(), remote);
+      setAllDMs(merged);
 
       const payload = [];
       for (const dm of merged) {
@@ -585,7 +585,11 @@ function mergeDMs(local: StoredDM[], remote: StoredDM[]): StoredDM[] {
   const byChannel = new Map<string, StoredDM>();
   for (const dm of [...remote, ...local]) {
     const existing = byChannel.get(dm.channelId);
-    if (!existing || dm.lastUsedAt > existing.lastUsedAt) byChannel.set(dm.channelId, dm);
+    const winner = !existing || dm.lastUsedAt > existing.lastUsedAt ? dm : existing;
+    // Which bot a DM belongs to never changes once known, so an older copy
+    // written before it was claimed must not un-claim it.
+    const botId = winner.botId ?? dm.botId ?? existing?.botId;
+    byChannel.set(dm.channelId, botId ? { ...winner, botId } : winner);
   }
   return [...byChannel.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
 }

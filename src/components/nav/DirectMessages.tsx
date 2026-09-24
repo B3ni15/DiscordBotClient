@@ -7,10 +7,10 @@ import { UserPanel } from "@/components/UserPanel";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { useClient } from "@/lib/store/client";
 import {
+  forgetDM,
   getDMs,
   getServerDMs,
   setDMNote,
-  setDMs,
   subscribeDMs,
   type StoredDM,
 } from "./dmStore";
@@ -77,7 +77,7 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
   }
 
   function remove(channelId: string) {
-    setDMs(entries.filter((item) => item.channelId !== channelId));
+    forgetDM(channelId);
     if (expanded === channelId) setExpanded(null);
   }
 
