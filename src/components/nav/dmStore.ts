@@ -8,6 +8,10 @@
  * Everything worth knowing about the recipient is stored alongside the channel:
  * the bot cannot look a user up again once it no longer shares a server with
  * them, so the name, avatar, tag and where the DM was started from are kept here.
+ *
+ * Every entry belongs to the bot that opened it: a DM channel only exists for
+ * that bot, so the list shown is filtered down to the bot currently signed in.
+ * The stored array (and the vault copy) still holds every bot's DMs.
  */
 
 export const DM_STORAGE_KEY = "disbotclient:dms";
@@ -33,6 +37,11 @@ export interface DMUserInfo {
 export interface StoredDM extends DMUserInfo {
   /** DM channel id — this is what gets selected. */
   channelId: string;
+  /**
+   * The bot this DM belongs to. Missing on entries written before DMs were kept
+   * per bot, until a bot proves the channel is its own (see `claimDMs`).
+   */
+  botId?: string;
   recipientId: string;
   /** Display name at the time the DM was opened. */
   name: string;
@@ -63,6 +72,11 @@ interface DMChannel {
 const EMPTY: StoredDM[] = [];
 let cache: StoredDM[] = EMPTY;
 let cacheSource: string | null = null;
+/** The signed-in bot's DMs, derived from `cache`; stable while neither changes. */
+let ownCache: StoredDM[] = EMPTY;
+let ownCacheFor: { all: StoredDM[]; owner: string | null } | null = null;
+/** The bot currently signed in; null shows no DMs at all. */
+let owner: string | null = null;
 const listeners = new Set<() => void>();
 
 export function subscribeDMs(listener: () => void) {
@@ -75,8 +89,23 @@ export function subscribeDMs(listener: () => void) {
   };
 }
 
-/** Must return a stable reference while the stored JSON is unchanged. */
-export function getDMs(): StoredDM[] {
+function notify() {
+  for (const listener of listeners) listener();
+}
+
+/** Switches the DM list over to another bot (or to none on sign-out). */
+export function setDMOwner(botId: string | null) {
+  if (owner === botId) return;
+  owner = botId;
+  notify();
+}
+
+export function getDMOwner(): string | null {
+  return owner;
+}
+
+/** Every stored DM, whichever bot it belongs to. Stable while the JSON is unchanged. */
+export function getAllDMs(): StoredDM[] {
   const raw = localStorage.getItem(DM_STORAGE_KEY);
   if (raw === cacheSource) return cache;
   cacheSource = raw;
@@ -84,11 +113,21 @@ export function getDMs(): StoredDM[] {
   return cache;
 }
 
+/** The signed-in bot's DMs. Must return a stable reference while nothing changed. */
+export function getDMs(): StoredDM[] {
+  const all = getAllDMs();
+  if (ownCacheFor && ownCacheFor.all === all && ownCacheFor.owner === owner) return ownCache;
+  ownCacheFor = { all, owner };
+  ownCache = owner ? all.filter((entry) => entry.botId === owner) : EMPTY;
+  return ownCache;
+}
+
 export function getServerDMs(): StoredDM[] {
   return EMPTY;
 }
 
-export function setDMs(next: StoredDM[]) {
+/** Replaces the whole stored list — every bot's DMs, not just the current one's. */
+export function setAllDMs(next: StoredDM[]) {
   const serialized = JSON.stringify(next);
   // A sync that resolves to exactly what was already stored must not notify:
   // a listener that re-syncs on every change would otherwise re-trigger
@@ -96,7 +135,12 @@ export function setDMs(next: StoredDM[]) {
   if (serialized === localStorage.getItem(DM_STORAGE_KEY)) return;
   localStorage.setItem(DM_STORAGE_KEY, serialized);
   cacheSource = null;
-  for (const listener of listeners) listener();
+  notify();
+}
+
+/** Drops a DM from the list. */
+export function forgetDM(channelId: string) {
+  setAllDMs(getAllDMs().filter((entry) => entry.channelId !== channelId));
 }
 
 export function getDM(channelId: string): StoredDM | undefined {
@@ -107,16 +151,41 @@ export function findDMByRecipient(recipientId: string): StoredDM | undefined {
   return getDMs().find((entry) => entry.recipientId === recipientId);
 }
 
+/** Entries from before DMs were kept per bot; nobody has claimed them yet. */
+export function getUnclaimedDMs(): StoredDM[] {
+  return getAllDMs().filter((entry) => !entry.botId);
+}
+
+/** Files unclaimed entries under `botId` once it has shown the channels are its own. */
+export function claimDMs(botId: string, channelIds: string[]) {
+  if (channelIds.length === 0) return;
+  const claimed = new Set(channelIds);
+  setAllDMs(
+    getAllDMs().map((entry) =>
+      !entry.botId && claimed.has(entry.channelId) ? { ...entry, botId } : entry,
+    ),
+  );
+}
+
 /**
  * Files a DM channel under Direct Messages, merging in anything newly learned
  * about the recipient. Details already stored are never dropped just because the
  * current payload is thinner — a `createDM` response, for instance, carries far
  * less than a guild member object.
  */
-export function rememberDM(channel: DMChannel, about: DMUserInfo = {}): StoredDM | undefined {
+export function rememberDM(
+  channel: DMChannel,
+  about: DMUserInfo = {},
+  /** When the conversation was last active, if not right now. */
+  at?: number,
+): StoredDM | undefined {
+  // Only the signed-in bot can see a DM channel, so it is the one it belongs to.
+  const botId = owner;
+  if (!botId) return undefined;
   const recipient = channel.recipients?.[0];
-  const current = getDMs();
-  const byChannel = current.find((item) => item.channelId === channel.id);
+  const all = getAllDMs();
+  const current = all.filter((item) => item.botId === botId);
+  const byChannel = all.find((item) => item.channelId === channel.id);
   // A re-open of a known channel may arrive without a recipients array.
   const id = recipient?.id ?? byChannel?.recipientId;
   if (!id) return undefined;
@@ -141,24 +210,25 @@ export function rememberDM(channel: DMChannel, about: DMUserInfo = {}): StoredDM
     roles: about.roles ?? previous?.roles,
   };
 
-  const now = Date.now();
+  const now = at ?? Date.now();
   const entry: StoredDM = {
     ...merged,
     channelId: channel.id,
+    botId,
     recipientId: id,
     name: merged.nick || merged.globalName || merged.username || previous?.name || id,
     avatar: merged.avatar ?? null,
-    openedAt: previous?.openedAt ?? now,
-    lastUsedAt: now,
+    openedAt: previous?.openedAt ?? Date.now(),
+    lastUsedAt: Math.max(now, previous?.lastUsedAt ?? 0),
     note: previous?.note,
   };
 
-  setDMs([
+  setAllDMs([
     entry,
-    ...current.filter(
+    ...all.filter(
       (item) =>
         item.channelId !== entry.channelId &&
-        (groupDM || item.recipientId !== entry.recipientId),
+        (groupDM || item.botId !== botId || item.recipientId !== entry.recipientId),
     ),
   ]);
   return entry;
@@ -167,8 +237,8 @@ export function rememberDM(channel: DMChannel, about: DMUserInfo = {}): StoredDM
 /** Attaches (or clears) the free-text note kept with a DM. */
 export function setDMNote(channelId: string, note: string) {
   const trimmed = note.trim();
-  setDMs(
-    getDMs().map((entry) =>
+  setAllDMs(
+    getAllDMs().map((entry) =>
       entry.channelId === channelId ? { ...entry, note: trimmed || undefined } : entry,
     ),
   );

@@ -26,7 +26,13 @@ import {
   type SelfPresence,
 } from "@/lib/discord/selfPresence";
 import { RestClient } from "@/lib/discord/rest";
-import { rememberDM, type DMUserInfo } from "@/components/nav/dmStore";
+import {
+  claimDMs,
+  getUnclaimedDMs,
+  rememberDM,
+  setDMOwner,
+  type DMUserInfo,
+} from "@/components/nav/dmStore";
 import {
   bridgeConnected,
   bridgeJoin,
@@ -207,6 +213,26 @@ function bridgeStreaming(): boolean {
   return bridgeConnected() && useBridge.getState().voice !== "idle";
 }
 
+/**
+ * DMs saved before the list was kept per bot carry no owner. A DM channel can
+ * only be fetched by the bot it belongs to, so each one this bot can read is
+ * filed under it; the rest wait for the bot that owns them to sign in.
+ */
+async function claimLegacyDMs(client: RestClient, botId: string) {
+  const claimed: string[] = [];
+  for (const dm of getUnclaimedDMs()) {
+    // Signed out or switched bots midway: this token no longer speaks for it.
+    if (rest !== client) break;
+    try {
+      await api.channel(client, dm.channelId);
+      claimed.push(dm.channelId);
+    } catch {
+      // Not this bot's channel (or gone for good).
+    }
+  }
+  if (rest === client) claimDMs(botId, claimed);
+}
+
 export const useClient = create<ClientState>((set, get) => ({
   token: null,
   status: "idle",
@@ -255,6 +281,9 @@ export const useClient = create<ClientState>((set, get) => ({
 
     localStorage.setItem(TOKEN_KEY, normalizedToken);
     set({ token: normalizedToken, user });
+    // Direct Messages lists only this bot's conversations.
+    setDMOwner(user.id);
+    void claimLegacyDMs(rest, user.id);
 
     // An unlocked vault remembers the bot, so it can be switched back to from
     // any of this account's browsers.
@@ -319,6 +348,7 @@ export const useClient = create<ClientState>((set, get) => ({
     gateway?.disconnect();
     gateway = null;
     rest = null;
+    setDMOwner(null);
     set({
       token: null,
       user: null,
