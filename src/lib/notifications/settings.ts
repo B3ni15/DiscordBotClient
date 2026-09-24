@@ -44,11 +44,14 @@ const listeners = new Set<() => void>();
 
 export function subscribeSettings(listener: () => void) {
   listeners.add(listener);
-  // Another tab may write the same key.
-  window.addEventListener("storage", listener);
+  // Another tab may write the same key; writes to any other key are not ours.
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === NOTIFICATION_STORAGE_KEY || event.key === null) listener();
+  };
+  window.addEventListener("storage", onStorage);
   return () => {
     listeners.delete(listener);
-    window.removeEventListener("storage", listener);
+    window.removeEventListener("storage", onStorage);
   };
 }
 
