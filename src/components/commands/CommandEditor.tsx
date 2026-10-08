@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import type { APIApplicationCommand } from "discord-api-types/v10";
-import { ScriptEditor } from "@/components/commands/ScriptEditor";
+import { EXAMPLE_SCRIPT, ScriptEditor } from "@/components/commands/ScriptEditor";
 import { useCommandsUI } from "@/lib/commands/commandsUi";
 import {
   SCRIPT_MAX_BYTES,
@@ -99,7 +99,8 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
   const [initialScript] = useState(() =>
     botId && command ? getScript(botId, command.name) : undefined,
   );
-  const [code, setCode] = useState(initialScript?.code ?? "");
+  // A new command starts with a working handler; an existing one shows its own.
+  const [code, setCode] = useState(initialScript?.code ?? (command ? "" : EXAMPLE_SCRIPT));
   const [scriptEnabled, setScriptEnabled] = useState(initialScript?.enabled ?? true);
   const [draft, setDraft] = useState<CommandDraft>(() =>
     command
@@ -162,9 +163,17 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
       if (botId) {
         const name = body.name;
         // A renamed command takes its script along.
-        if (command && command.name !== name) removeScript(botId, command.name);
-        if (code.trim()) saveScript(botId, name, code, scriptEnabled);
-        else removeScript(botId, name);
+        const renamed = Boolean(command && command.name !== name);
+        if (renamed) removeScript(botId, command!.name);
+        const unchanged =
+          !renamed &&
+          (initialScript?.code ?? "") === code &&
+          (initialScript?.enabled ?? true) === scriptEnabled;
+        // Re-saving an untouched script would only bump its date and re-sync it.
+        if (!unchanged) {
+          if (code.trim()) saveScript(botId, name, code, scriptEnabled);
+          else removeScript(botId, name);
+        }
       }
       bump();
       setSuccess(

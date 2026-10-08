@@ -259,7 +259,9 @@ export interface SandboxHost {
 export type SandboxResult =
   | { status: "ok"; value: unknown }
   | { status: "error"; message: string; phase: "compile" | "run" | "start" }
-  | { status: "timeout" };
+  | { status: "timeout" }
+  /** Stopped from outside, through the signal. */
+  | { status: "aborted" };
 
 type WorkerMessage =
   | { type: "ready" }
@@ -320,6 +322,7 @@ export function runInSandbox(
   interaction: unknown,
   host: SandboxHost,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<SandboxResult> {
   return new Promise((resolve) => {
     let settled = false;
@@ -334,6 +337,11 @@ export function runInSandbox(
     };
 
     const timer = setTimeout(() => finish({ status: "timeout" }), timeoutMs);
+    if (signal?.aborted) {
+      finish({ status: "aborted" });
+      return;
+    }
+    signal?.addEventListener("abort", () => finish({ status: "aborted" }), { once: true });
 
     startWorker(
       (started) => {

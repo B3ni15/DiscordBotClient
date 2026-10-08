@@ -7,20 +7,27 @@ import type {
 } from "discord-api-types/v10";
 import { api } from "@/lib/discord/api";
 import { commandApi } from "@/lib/discord/commandApi";
-import type { RestClient } from "@/lib/discord/rest";
+import { DiscordHTTPError, type RestClient } from "@/lib/discord/rest";
 import { runInSandbox, type LogLevel } from "./sandbox";
 import { appendLog, finishRun, startRun } from "./scriptRuns";
-import { patchInteraction, snowflakeTimestamp } from "./useInteractions";
+import { patchInteraction } from "./useInteractions";
 
 /** A script that has not finished by then is stopped. */
 export const SCRIPT_TIMEOUT_MS = 60_000;
 
 /**
  * Discord drops an interaction that is not acknowledged within three seconds.
- * A script still busy at this point is deferred on its behalf, so a slow fetch
- * does not end in "The application did not respond".
+ * A script still busy this long after the interaction arrived is deferred on
+ * its behalf, so a slow fetch does not end in "The application did not
+ * respond". Measured from arrival rather than from the snowflake, so a
+ * computer clock that is off cannot push it past the deadline.
  */
-const AUTO_DEFER_AFTER_MS = 2_000;
+const AUTO_DEFER_AFTER_MS = 1_500;
+
+/** Discord: the interaction was already acknowledged (by another client). */
+const ALREADY_ACKNOWLEDGED = 40060;
+/** Discord: unknown interaction — usually one whose three seconds are over. */
+const UNKNOWN_INTERACTION = 10062;
 
 const EPHEMERAL = 1 << 6;
 
@@ -42,6 +49,17 @@ function toPayload(value: unknown, allowEphemeral = true): Payload {
   const payload: Payload = { ...rest };
   if (ephemeral && allowEphemeral) payload.flags = (Number(payload.flags) || 0) | EPHEMERAL;
   return payload;
+}
+
+/** Edits cannot change whether a message is ephemeral; Discord rejects the flag there. */
+function forEdit(payload: Payload): Payload {
+  if (payload.flags === undefined) return payload;
+  const flags = (Number(payload.flags) || 0) & ~EPHEMERAL;
+  return { ...payload, flags: flags || undefined };
+}
+
+function isEphemeral(payload: Payload): boolean {
+  return ((Number(payload.flags) || 0) & EPHEMERAL) !== 0;
 }
 
 /** Whether a script's return value looks like something worth replying with. */
@@ -67,18 +85,23 @@ function summarize(payload: Payload): string {
 /**
  * Discord paths only. The REST client prefixes them with the same-origin proxy,
  * so a path that climbed out of it would reach this app's own routes instead.
+ * A query string written into the path is split off into `query`.
  */
-function checkPath(path: unknown): string {
-  if (typeof path !== "string" || !path.startsWith("/")) {
+function checkPath(raw: unknown): { path: string; query: Record<string, string> } {
+  if (typeof raw !== "string" || !raw.startsWith("/")) {
     throw new Error('A Discord API path must start with "/", e.g. "/channels/123/messages".');
   }
-  if (path.includes("..") || path.includes("\\") || path.includes("//") || /[?#]/.test(path)) {
-    throw new Error("That path is not allowed. Pass query parameters as the second argument.");
+  const [path, search = ""] = raw.split("#")[0].split("?", 2);
+  if (path.includes("..") || path.includes("\\") || path.includes("//") || /%2e|%2f|%5c/i.test(path)) {
+    throw new Error("That path is not allowed.");
   }
-  return path;
+  return { path, query: Object.fromEntries(new URLSearchParams(search)) };
 }
 
 type ResponseState = "none" | "deferred" | "replied";
+
+/** Thrown when another client answered first, or the interaction expired. */
+class LostInteraction extends Error {}
 
 /**
  * Answers one interaction the way discord.js would let a handler: the first
@@ -89,6 +112,7 @@ type ResponseState = "none" | "deferred" | "replied";
 class Responder {
   state: ResponseState = "none";
   autoDeferred = false;
+  #ephemeralDefer = false;
   #queue: Promise<unknown> = Promise.resolve();
 
   constructor(
@@ -97,12 +121,19 @@ class Responder {
     /** Test runs talk to nothing; they only log what would have been sent. */
     private readonly test: boolean,
     private readonly log: (text: string) => void,
+    /** Called when the interaction turns out to be someone else's to answer. */
+    private readonly onLost: (reason: string) => void,
   ) {}
 
   #enqueue<T>(task: () => Promise<T>): Promise<T> {
     const result = this.#queue.then(task, task);
     this.#queue = result.catch(() => {});
     return result;
+  }
+
+  /** Resolves once every queued response has gone out (or failed). */
+  idle(): Promise<void> {
+    return this.#queue.then(() => undefined);
   }
 
   #mark(state: ResponseState, note: string) {
@@ -112,26 +143,74 @@ class Responder {
     }
   }
 
-  reply(payload: Payload): Promise<APIMessage | null> {
-    return this.#enqueue(async () => {
-      const { id, token, application_id } = this.interaction;
-      if (this.state === "none") {
-        this.log(`reply → ${summarize(payload)}`);
-        if (!this.test) await commandApi.respond(this.rest, id, token, payload);
-        this.#mark("replied", "Answered by its command script.");
-        return null;
+  /** The first acknowledgement; failing it means the interaction is not ours. */
+  async #acknowledge(send: () => Promise<unknown>) {
+    if (this.test) return;
+    try {
+      await send();
+    } catch (cause) {
+      if (cause instanceof DiscordHTTPError && cause.code === ALREADY_ACKNOWLEDGED) {
+        this.onLost("Another client (another browser or device) answered this interaction first.");
+        throw new LostInteraction("Another client already answered this interaction.");
       }
-      if (this.state === "deferred") {
-        this.log(`reply (edits the deferred response) → ${summarize(payload)}`);
-        const message = this.test
-          ? null
-          : await commandApi.editOriginalResponse(this.rest, application_id, token, payload);
+      if (cause instanceof DiscordHTTPError && cause.code === UNKNOWN_INTERACTION) {
+        this.onLost("Discord no longer accepts an answer — the three seconds were over.");
+        throw new LostInteraction("The interaction expired before it was answered.");
+      }
+      throw cause;
+    }
+  }
+
+  #edit(payload: Payload) {
+    return commandApi.editOriginalResponse(
+      this.rest,
+      this.interaction.application_id,
+      this.interaction.token,
+      forEdit(payload),
+    );
+  }
+
+  #followUp(payload: Payload) {
+    return commandApi.followUp(this.rest, this.interaction.application_id, this.interaction.token, payload);
+  }
+
+  #deleteOriginal() {
+    return this.rest.delete<void>(
+      `/webhooks/${this.interaction.application_id}/${this.interaction.token}/messages/@original`,
+    );
+  }
+
+  reply(payload: Payload): Promise<APIMessage | null> {
+    return this.#enqueue(() => this.#reply(payload));
+  }
+
+  /** The reply itself; only ever called from inside the queue. */
+  async #reply(payload: Payload): Promise<APIMessage | null> {
+    const { id, token } = this.interaction;
+    if (this.state === "none") {
+      this.log(`reply → ${summarize(payload)}`);
+      await this.#acknowledge(() => commandApi.respond(this.rest, id, token, payload));
+      this.#mark("replied", "Answered by its command script.");
+      return null;
+    }
+    if (this.state === "deferred") {
+      // The automatic defer was public; an ephemeral answer must not become
+      // public by editing it. The placeholder goes first — Discord turns the
+      // first follow-up after a defer into the edit of it otherwise.
+      if (this.autoDeferred && !this.#ephemeralDefer && isEphemeral(payload)) {
+        this.log(`reply (ephemeral, replaces the automatic “thinking…”) → ${summarize(payload)}`);
+        if (!this.test) await this.#deleteOriginal();
+        const message = this.test ? null : await this.#followUp(payload);
         this.#mark("replied", "Answered by its command script.");
         return message;
       }
-      this.log(`reply (already answered, sent as a follow-up) → ${summarize(payload)}`);
-      return this.test ? null : commandApi.followUp(this.rest, application_id, token, payload);
-    });
+      this.log(`reply (fills in the deferred response) → ${summarize(forEdit(payload))}`);
+      const message = this.test ? null : await this.#edit(payload);
+      this.#mark("replied", "Answered by its command script.");
+      return message;
+    }
+    this.log(`reply (already answered, sent as a follow-up) → ${summarize(payload)}`);
+    return this.test ? null : this.#followUp(payload);
   }
 
   defer(ephemeral: boolean, automatic = false): Promise<null> {
@@ -142,34 +221,30 @@ class Responder {
           ephemeral ? " — ephemeral" : ""
         }`,
       );
-      if (!this.test) await commandApi.defer(this.rest, this.interaction.id, this.interaction.token, ephemeral);
+      await this.#acknowledge(() =>
+        commandApi.defer(this.rest, this.interaction.id, this.interaction.token, ephemeral),
+      );
       this.autoDeferred = automatic;
+      this.#ephemeralDefer = ephemeral;
       this.#mark("deferred", "Deferred by its command script.");
       return null;
     });
   }
 
   followUp(payload: Payload): Promise<APIMessage | null> {
-    if (this.state === "none") return this.reply(payload);
     return this.#enqueue(async () => {
+      // Decided in the queue, so a reply still on its way counts as sent.
+      if (this.state !== "replied") return this.#reply(payload);
       this.log(`followUp → ${summarize(payload)}`);
-      if (this.test) return null;
-      return commandApi.followUp(this.rest, this.interaction.application_id, this.interaction.token, payload);
+      return this.test ? null : this.#followUp(payload);
     });
   }
 
   editReply(payload: Payload): Promise<APIMessage | null> {
-    if (this.state === "none") return this.reply(payload);
     return this.#enqueue(async () => {
-      this.log(`editReply → ${summarize(payload)}`);
-      const message = this.test
-        ? null
-        : await commandApi.editOriginalResponse(
-            this.rest,
-            this.interaction.application_id,
-            this.interaction.token,
-            payload,
-          );
+      if (this.state === "none") return this.#reply(payload);
+      this.log(`editReply → ${summarize(forEdit(payload))}`);
+      const message = this.test ? null : await this.#edit(payload);
       this.#mark("replied", "Answered by its command script.");
       return message;
     });
@@ -179,11 +254,7 @@ class Responder {
     return this.#enqueue(async () => {
       if (this.state === "none") throw new Error("There is no reply to delete yet.");
       this.log("deleteReply");
-      if (!this.test) {
-        await this.rest.delete<void>(
-          `/webhooks/${this.interaction.application_id}/${this.interaction.token}/messages/@original`,
-        );
-      }
+      if (!this.test) await this.#deleteOriginal();
       return null;
     });
   }
@@ -195,6 +266,8 @@ export interface RunScriptOptions {
   name: string;
   code: string;
   interaction: APIInteraction;
+  /** When this client received the interaction (epoch ms); now by default. */
+  receivedAt?: number;
   /** Simulates the interaction responses instead of sending them. */
   test?: boolean;
 }
@@ -206,17 +279,22 @@ export async function runCommandScript({
   name,
   code,
   interaction,
+  receivedAt = Date.now(),
   test = false,
 }: RunScriptOptions): Promise<void> {
   const invoker = interaction.member?.user ?? interaction.user ?? null;
   const runId = startRun(botId, name, test, invoker ? (invoker.global_name ?? invoker.username) : null);
   const system = (text: string) => appendLog(runId, "system", text);
-  const responder = new Responder(rest, interaction, test, system);
+  const stop = new AbortController();
+  let lostReason: string | null = null;
+  const responder = new Responder(rest, interaction, test, system, (reason) => {
+    lostReason = reason;
+    stop.abort();
+  });
 
   if (test) system("Test run: replies are only logged here; discord.* and send() calls are real.");
 
   // Acknowledge on the script's behalf before Discord's three seconds run out.
-  const createdAt = test ? Date.now() : snowflakeTimestamp(interaction.id);
   let running = true;
   const deferTimer = setTimeout(
     () => {
@@ -226,7 +304,7 @@ export async function runCommandScript({
         });
       }
     },
-    Math.max(0, createdAt + AUTO_DEFER_AFTER_MS - Date.now()),
+    Math.max(0, receivedAt + AUTO_DEFER_AFTER_MS - Date.now()),
   );
 
   const call = async (method: string, args: unknown[]): Promise<unknown> => {
@@ -253,15 +331,19 @@ export async function runCommandScript({
         return api.sendMessage(rest, channelId, payload as Parameters<typeof api.sendMessage>[2]);
       }
       case "rest": {
-        const [verb, path, options] = args as [string, unknown, { query?: Record<string, string>; body?: unknown }];
+        const [verb, rawPath, options] = args as [
+          string,
+          unknown,
+          { query?: Record<string, string> | null; body?: unknown } | null,
+        ];
         const allowed = ["GET", "POST", "PATCH", "PUT", "DELETE"] as const;
         const httpMethod = allowed.find((entry) => entry === verb);
         if (!httpMethod) throw new Error(`Unsupported method ${verb}.`);
-        const checked = checkPath(path);
-        system(`discord.${httpMethod.toLowerCase()} ${checked}`);
-        return rest.request(checked, {
+        const { path, query } = checkPath(rawPath);
+        system(`discord.${httpMethod.toLowerCase()} ${path}`);
+        return rest.request(path, {
           method: httpMethod,
-          query: options?.query ?? undefined,
+          query: { ...query, ...(options?.query ?? {}) },
           body: httpMethod === "GET" || httpMethod === "DELETE" ? undefined : options?.body,
         });
       }
@@ -278,9 +360,19 @@ export async function runCommandScript({
       log: (level: LogLevel, text: string) => appendLog(runId, level, text),
     },
     SCRIPT_TIMEOUT_MS,
+    stop.signal,
   );
   running = false;
   clearTimeout(deferTimer);
+  // A reply the script did not await may still be on its way.
+  await responder.idle();
+
+  if (lostReason !== null || result.status === "aborted") {
+    system(`Stopped: ${lostReason ?? "the run was cancelled."}`);
+    finishRun(runId, "error");
+    if (!test) patchInteraction(interaction.id, "answered", lostReason ?? "Cancelled.");
+    return;
+  }
 
   try {
     if (result.status === "ok") {
@@ -297,7 +389,7 @@ export async function runCommandScript({
           patchInteraction(interaction.id, "answered", "Its command script finished without replying.");
         }
       }
-      system(`Finished in ${Date.now() - createdAt} ms.`);
+      system(`Finished in ${Date.now() - receivedAt} ms.`);
       finishRun(runId, "ok");
       return;
     }
