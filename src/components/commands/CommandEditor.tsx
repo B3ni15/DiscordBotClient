@@ -2,7 +2,15 @@
 
 import { useState, type FormEvent } from "react";
 import type { APIApplicationCommand } from "discord-api-types/v10";
+import { ScriptEditor } from "@/components/commands/ScriptEditor";
 import { useCommandsUI } from "@/lib/commands/commandsUi";
+import {
+  SCRIPT_MAX_BYTES,
+  getScript,
+  removeScript,
+  saveScript,
+  scriptBytes,
+} from "@/lib/commands/scriptStore";
 import { useApplicationId } from "@/lib/commands/useApplicationId";
 import {
   CHOICES_MAX,
@@ -85,7 +93,14 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
   const applicationId = useApplicationId();
   const bump = useCommandsUI((state) => state.bump);
   const stopEditing = useCommandsUI((state) => state.stopEditing);
+  const botId = useClient((state) => state.user?.id ?? null);
 
+  // Read once: the form is remounted for every command it edits.
+  const [initialScript] = useState(() =>
+    botId && command ? getScript(botId, command.name) : undefined,
+  );
+  const [code, setCode] = useState(initialScript?.code ?? "");
+  const [scriptEnabled, setScriptEnabled] = useState(initialScript?.enabled ?? true);
   const [draft, setDraft] = useState<CommandDraft>(() =>
     command
       ? draftFromOptions(command.name, command.description, command.options)
@@ -131,6 +146,10 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
       setError("The application id is not available yet.");
       return;
     }
+    if (scriptBytes(code) > SCRIPT_MAX_BYTES) {
+      setError(`The handler is too large; keep it under ${SCRIPT_MAX_BYTES / 1000} kB.`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -139,6 +158,13 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
         await commandApi.edit(getRest(), applicationId, command.id, body, target);
       } else {
         await commandApi.create(getRest(), applicationId, body, target);
+      }
+      if (botId) {
+        const name = body.name;
+        // A renamed command takes its script along.
+        if (command && command.name !== name) removeScript(botId, command.name);
+        if (code.trim()) saveScript(botId, name, code, scriptEnabled);
+        else removeScript(botId, name);
       }
       bump();
       setSuccess(
@@ -405,6 +431,16 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
           </li>
         ))}
       </ul>
+
+      <ScriptEditor
+        commandName={draft.name}
+        runName={command?.name ?? draft.name.trim()}
+        code={code}
+        onCodeChange={setCode}
+        enabled={scriptEnabled}
+        onEnabledChange={setScriptEnabled}
+        options={draft.options}
+      />
 
       {error && (
         <p role="alert" className="text-xs leading-relaxed text-danger">

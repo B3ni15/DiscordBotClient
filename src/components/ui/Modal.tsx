@@ -11,8 +11,8 @@ export interface ModalProps {
   children: React.ReactNode;
   /** The action row at the bottom; usually Cancel plus a primary button. */
   footer?: React.ReactNode;
-  /** Wider shell, for the permission editor's two columns. */
-  size?: "md" | "lg";
+  /** Wider shell, for the permission editor's two columns or the embed builder's preview. */
+  size?: "md" | "lg" | "xl";
 }
 
 /**
@@ -74,7 +74,7 @@ export function Modal({ title, subtitle, onClose, children, footer, size = "md" 
         aria-label={title}
         tabIndex={-1}
         className={`flex max-h-[85vh] w-full animate-pop-in flex-col overflow-hidden rounded-md bg-panel shadow-2xl outline-none ${
-          size === "lg" ? "max-w-2xl" : "max-w-md"
+          size === "xl" ? "max-w-5xl" : size === "lg" ? "max-w-2xl" : "max-w-md"
         }`}
       >
         <header className="shrink-0 px-4 pt-4 pb-3">

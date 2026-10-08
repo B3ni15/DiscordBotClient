@@ -6,9 +6,16 @@ import type {
   GatewayMessageCreateDispatchData,
 } from "discord-api-types/v10";
 import { userAvatarUrl } from "@/lib/discord/cdn";
+import { buildPath } from "@/lib/nav/urlSync";
 import { useClient } from "@/lib/store/client";
+import { useUI } from "@/lib/store/ui";
 import { subscribeDispatch } from "./dispatch";
 import { notificationsSupported } from "./permission";
+import {
+  listenForNotificationClicks,
+  registerServiceWorker,
+  showNotification,
+} from "./serviceWorker";
 import { getSettings } from "./settings";
 import { playBlip } from "./sound";
 import { startUnreadTracking } from "./unread";
@@ -26,9 +33,13 @@ export function useNotifications() {
   useEffect(() => {
     const stopUnread = startUnreadTracking();
     const stopDispatch = subscribeDispatch(handleDispatch);
+    void registerServiceWorker();
+    // A click on a notification, handled by the service worker, lands here.
+    const stopClicks = listenForNotificationClicks(openChannel);
     return () => {
       stopDispatch();
       stopUnread();
+      stopClicks();
     };
   }, []);
 }
@@ -81,28 +92,36 @@ function notify(message: GatewayMessageCreateDispatchData) {
   const author =
     message.member?.nick ?? message.author.global_name ?? message.author.username ?? "Unknown";
   const where = channel?.name ? `#${channel.name}` : "Direct message";
+  const guildId = message.guild_id ?? guildOf(message.channel_id) ?? null;
 
-  let notification: Notification;
-  try {
-    notification = new Notification(`${author} - ${where}`, {
+  void showNotification(
+    `${author} - ${where}`,
+    {
       body: body(message),
       icon: userAvatarUrl(message.author, 64),
       // One live popup per channel instead of a stack of them.
       tag: `disbotclient:${message.channel_id}`,
       silent: true,
-    });
-  } catch {
-    // Some browsers only allow notifications from a service worker.
-    return;
-  }
-
-  notification.onclick = () => {
-    window.focus();
-    void useClient.getState().selectChannel(message.channel_id);
-    notification.close();
-  };
+      channelId: message.channel_id,
+      url: buildPath({ dmMode: !guildId, guildId, channelId: message.channel_id }),
+    },
+    () => openChannel(message.channel_id),
+  );
 
   if (getSettings().sound) playBlip();
+}
+
+/** Brings a channel up, switching to its server or to Direct Messages first. */
+export function openChannel(channelId: string) {
+  const state = useClient.getState();
+  const guildId = guildOf(channelId);
+  if (guildId) {
+    useUI.getState().setDmMode(false);
+    if (state.selectedGuildId !== guildId) state.selectGuild(guildId);
+  } else {
+    useUI.getState().setDmMode(true);
+  }
+  void state.selectChannel(channelId);
 }
 
 function body(message: APIMessage): string {

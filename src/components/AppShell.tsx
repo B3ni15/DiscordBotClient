@@ -4,6 +4,7 @@ import { DirectMessages } from "@/components/nav/DirectMessages";
 import { GuildDialogs } from "@/components/guild/GuildDialogs";
 import { channelMenuItems, guildMenuItems } from "@/components/context/menus";
 import { ContextMenuHost } from "@/components/ui/ContextMenu";
+import { useCommandRunner } from "@/lib/commands/useCommandRunner";
 import { useGuildPowers } from "@/lib/discord/useGuildPowers";
 import { useNotifications } from "@/lib/notifications/useNotifications";
 import { useUrlSync } from "@/lib/nav/useUrlSync";
@@ -33,6 +34,8 @@ export function AppShell() {
 
   useNotifications();
   useUrlSync();
+  // Files interactions in the inbox and runs the bot's command scripts.
+  useCommandRunner();
   // Learns what the bot may do in the open server, which every menu asks about.
   useGuildPowers(selectedGuildId);
 

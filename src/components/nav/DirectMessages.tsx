@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { UnreadBadge } from "@/components/notifications/UnreadBadge";
 import { BotTag } from "@/components/ui/BotTag";
 import { Spinner } from "@/components/ui/Spinner";
 import { UserPanel } from "@/components/UserPanel";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { DiscordHTTPError } from "@/lib/discord/rest";
+import { useUnread } from "@/lib/notifications/unread";
 import { useClient } from "@/lib/store/client";
 import { scanGuildDMs, type DMScanProgress } from "./dmScan";
 import {
@@ -160,6 +162,7 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
                         </span>
                         <span className="block truncate text-[11px] text-faint">{handle}</span>
                       </span>
+                      <DMUnreadBadge channelId={entry.channelId} />
                     </button>
                     <button
                       type="button"
@@ -369,4 +372,10 @@ function DMScanner() {
       )}
     </div>
   );
+}
+
+/** A component of its own so the unread hook stays out of the list's loop. */
+function DMUnreadBadge({ channelId }: { channelId: string }) {
+  const unread = useUnread(channelId);
+  return <UnreadBadge count={unread} className="shrink-0" />;
 }
