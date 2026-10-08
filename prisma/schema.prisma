@@ -73,11 +73,11 @@ model KeyWrapper {
   @@index([userId])
 }
 
-/// One encrypted record: a saved bot, a remembered DM, a preference blob.
+/// One encrypted record: a saved bot, a remembered DM, a preference blob, a command script.
 model VaultItem {
   id     String @id
   userId String
-  /// "bot" | "dm" | "settings" — plaintext, because the sync has to query it.
+  /// "bot" | "dm" | "settings" | "script" — plaintext, because the sync has to query it.
   kind String
   /// Opaque, stable handle for the record: HMAC of its real id under the vault
   /// key, so two devices agree on it while the server cannot read it.

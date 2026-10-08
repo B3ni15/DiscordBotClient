@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useSyncExternalStore } from "react";
-import { InteractionType, type APIInteraction } from "discord-api-types/v10";
-import { useClient } from "@/lib/store/client";
+import { useCallback, useSyncExternalStore } from "react";
+import type { APIInteraction } from "discord-api-types/v10";
 
 /** Only the newest entries are kept; this is a live view, not an archive. */
 export const MAX_INTERACTIONS = 50;
@@ -59,7 +58,8 @@ export function snowflakeTimestamp(id: string): number {
   }
 }
 
-function push(interaction: APIInteraction) {
+/** Files an interaction that arrived over the gateway; duplicates are ignored. */
+export function recordInteraction(interaction: APIInteraction) {
   // Two mounted hooks would otherwise record the same dispatch twice.
   if (entries.some((entry) => entry.interaction.id === interaction.id)) return;
   const entry: InboxEntry = {
@@ -72,7 +72,12 @@ function push(interaction: APIInteraction) {
   emit();
 }
 
-function patch(interactionId: string, state: InteractionReplyState, note: string | null) {
+/** Records how one interaction was answered, by a person or by a script. */
+export function patchInteraction(
+  interactionId: string,
+  state: InteractionReplyState,
+  note: string | null,
+) {
   let changed = false;
   entries = entries.map((entry) => {
     if (entry.interaction.id !== interactionId) return entry;
@@ -95,7 +100,9 @@ export interface UseInteractions {
 }
 
 /**
- * Collects INTERACTION_CREATE dispatches from the gateway.
+ * The interaction inbox. Dispatches are collected by `useCommandRunner`, which
+ * stays mounted for the whole session, so nothing is missed while the panel is
+ * closed.
  *
  * Discord only delivers interactions over the gateway while the application has
  * NO "Interactions Endpoint URL" configured in the Developer Portal — with one
@@ -103,25 +110,10 @@ export interface UseInteractions {
  */
 export function useInteractions(): UseInteractions {
   const list = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const getGateway = useClient((state) => state.getGateway);
-  const status = useClient((state) => state.status);
-
-  useEffect(() => {
-    const gateway = getGateway();
-    if (!gateway) return;
-    // `on` returns its own unsubscribe, so unmounting detaches the listener.
-    return gateway.on("dispatch", (event, data) => {
-      if (event !== "INTERACTION_CREATE") return;
-      const interaction = data as APIInteraction;
-      if (interaction.type === InteractionType.Ping) return;
-      push(interaction);
-    });
-    // `status` is the signal that a gateway instance exists after a login.
-  }, [getGateway, status]);
 
   const setReplyState = useCallback(
     (interactionId: string, state: InteractionReplyState, note: string | null = null) =>
-      patch(interactionId, state, note),
+      patchInteraction(interactionId, state, note),
     [],
   );
 

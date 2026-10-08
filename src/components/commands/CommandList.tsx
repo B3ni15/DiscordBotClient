@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { APIApplicationCommand } from "discord-api-types/v10";
 import { useCommandsUI } from "@/lib/commands/commandsUi";
+import {
+  getAllScripts,
+  getServerScripts,
+  removeScript,
+  subscribeScripts,
+} from "@/lib/commands/scriptStore";
 import { useApplicationId } from "@/lib/commands/useApplicationId";
 import { commandApi } from "@/lib/discord/commandApi";
 import { useClient } from "@/lib/store/client";
@@ -28,6 +34,8 @@ export function CommandList({ guildId, className }: CommandListProps) {
   const getRest = useClient((state) => state.getRest);
   const token = useClient((state) => state.token);
   const applicationId = useApplicationId();
+  const botId = useClient((state) => state.user?.id ?? null);
+  const scripts = useSyncExternalStore(subscribeScripts, getAllScripts, getServerScripts);
 
   const revision = useCommandsUI((state) => state.revision);
   const bump = useCommandsUI((state) => state.bump);
@@ -80,6 +88,11 @@ export function CommandList({ guildId, className }: CommandListProps) {
     setActionError(null);
     try {
       await commandApi.remove(getRest(), applicationId, command.id, scope);
+      // The script goes with the last command of its name, in any scope.
+      const others = [...(current?.global ?? []), ...(current?.guild ?? [])].filter(
+        (entry) => entry.id !== command.id && entry.name === command.name,
+      );
+      if (botId && others.length === 0) removeScript(botId, command.name);
       setConfirmingId(null);
       bump();
     } catch (cause) {
@@ -92,6 +105,9 @@ export function CommandList({ guildId, className }: CommandListProps) {
   function renderCommand(command: APIApplicationCommand, scope: string | null) {
     const isEditing = editing?.command?.id === command.id;
     const optionCount = command.options?.length ?? 0;
+    const script = botId
+      ? scripts.find((entry) => entry.botId === botId && entry.name === command.name)
+      : undefined;
     return (
       <li
         key={command.id}
@@ -101,6 +117,16 @@ export function CommandList({ guildId, className }: CommandListProps) {
       >
         <div className="flex items-baseline gap-2">
           <span className="truncate font-mono text-sm text-text">/{command.name}</span>
+          {script && (
+            <span
+              title={script.enabled ? "Answered by its script" : "Has a script, currently turned off"}
+              className={`shrink-0 rounded px-1 font-mono text-[10px] ${
+                script.enabled ? "bg-online/15 text-online" : "bg-raised text-muted"
+              }`}
+            >
+              JS
+            </span>
+          )}
           <span className="ml-auto shrink-0 font-mono text-[10px] text-muted">
             {optionCount} {optionCount === 1 ? "option" : "options"}
           </span>

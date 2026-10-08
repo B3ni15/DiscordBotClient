@@ -50,6 +50,7 @@ It runs entirely from the browser, connects directly to the Discord Gateway, and
 | ⚡ | **Live Gateway** | Real-time messages, edits, deletes, reactions and typing events |
 | 🧵 | **Threads** | Browse active threads and create new threads |
 | 📊 | **Polls** | Create polls, see live vote counts and voters, end the bot's own polls |
+| 🧩 | **Embed builder** | Build rich embeds with a live preview and send them, or drop them into a command script |
 | 🔎 | **Search** | Discord search when available, with a loaded-history fallback |
 | 👥 | **Members** | Online/offline members, roles, statuses and activities |
 | 🏷️ | **Badges** | Public Discord badges and server-booster status where exposed |
@@ -60,6 +61,7 @@ It runs entirely from the browser, connects directly to the Discord Gateway, and
 | 💌 | **DMs** | Open direct conversations by user ID and remember them locally |
 | 🔔 | **Notifications** | Desktop notifications, unread badges and local mutes |
 | 🛠️ | **Bot tooling** | Manage slash commands and handle incoming interactions |
+| 📜 | **Command scripts** | Write a JavaScript handler for a slash command in the browser; it answers the command automatically |
 | 🏛️ | **Server management** | Create, edit and delete channels, categories and roles; per-channel/category permission overwrites |
 | 🖱️ | **Context menus** | Discord-style right-click menus on servers, channels, categories, members and messages |
 | 🛡️ | **Moderation** | Kick, ban, time out, change nicknames and manage member roles, permissions permitting |
@@ -160,6 +162,15 @@ Browse active threads directly from the channel interface and create new threads
 ### Polls
 
 The 📊 button next to the message box opens a poll dialog: a question, up to ten answers, a duration and an optional multi-answer mode. Polls in the channel render with a bar per answer, the vote count, the remaining time and the winner once closed. Clicking an answer lists who voted for it, and a poll the bot started can be ended early. Bots cannot vote themselves; that is a Discord restriction.
+
+### Embeds
+
+The 🧩 button beside it opens the embed builder: colour, author, title and link,
+description, up to 25 fields (inline or not), image, thumbnail, footer and a
+timestamp, with an optional message text above the embed. A live preview shows
+the embed the way the channel will, and Discord's limits (6000 characters in
+all, 25 fields…) are checked before sending. The **JSON** tab shows the embed
+as Discord's JSON, and loads pasted JSON back into the editor.
 
 ### Pinned messages
 
@@ -373,6 +384,53 @@ You can respond inside Discord's interaction response window, or defer an intera
 
 This makes DisbotClient useful as a lightweight operational interface for bot developers and administrators.
 
+### Command scripts
+
+Every slash command can carry a **JavaScript handler**, written right in the
+command editor. Whenever someone uses the command, the script runs in this
+browser and answers it — no hosting, no separate bot process:
+
+```js
+const target = options.getUser("target") ?? user;
+
+await reply({
+  embeds: [
+    new EmbedBuilder()
+      .setTitle(`Hello, ${target.global_name ?? target.username}!`)
+      .setColor("#5865f2")
+      .setTimestamp(),
+  ],
+  ephemeral: true,
+});
+```
+
+What a script gets:
+
+| Name | What it does |
+|---|---|
+| `reply(message)` | Answers the command — a string or `{ content, embeds, components, ephemeral }` |
+| `defer({ ephemeral })`, `followUp()`, `editReply()`, `deleteReply()` | The rest of Discord's interaction responses |
+| `options.getString("name")` … | Option values: also `getInteger`, `getNumber`, `getBoolean`, `getUser`, `getMember`, `getChannel`, `getRole`, `getAttachment`, `getSubcommand` |
+| `user`, `member`, `guildId`, `channelId`, `interaction` | Who used the command, where, and the raw interaction |
+| `send(channelId, message)` | Posts a normal message into any channel |
+| `discord.get/post/patch/put/delete(path, …)` | Any other Discord API route, as the bot |
+| `EmbedBuilder`, `sleep(ms)`, `console.log()` | Helpers; the log shows up in the editor's console |
+
+- **Saved per bot**, keyed by the command's name, in this browser — and in the
+  encrypted vault when account sync is on, so every device has them.
+- **Sandboxed**: the code runs in a Web Worker with an opaque origin. It never
+  sees the bot token and cannot read this site's storage or the vault key; its
+  Discord calls go through the page. A script is stopped after 60 seconds.
+- **On time**: a script still running after two seconds is deferred
+  automatically, so Discord never gives up with "The application did not
+  respond". `return "text"` is a shorthand for replying with it.
+- **Testable**: *Test run* runs the script with option values you choose and
+  logs the replies instead of sending them. *Insert embed* opens the embed
+  builder and inserts a ready `reply({ embeds })` call.
+
+Scripts only run while the client is open and signed in as that bot, and — like
+the inbox — only while the application has no Interactions Endpoint URL.
+
 ---
 
 ## 🔔 Notifications
@@ -441,14 +499,16 @@ If you want the smallest possible trust boundary, self-host the application.
 
 Sync is **optional**. With no account configured — or no account signed in — DisbotClient behaves exactly as it always has: everything lives in the browser and the server stores nothing.
 
-Sign in with Discord and the app gains a vault: your saved bots, the DM list and your notification preferences follow you between devices.
+Sign in with Discord and the app gains a vault: your saved bots, the DM list, your command scripts and your notification preferences follow you between devices.
+
+The DM list and the scripts are kept in step with a three-way merge against the state of the last sync. Where this browser and the vault disagree and this browser has not changed the record since, the vault's copy wins. Removing a DM (or a script) deletes its row from the vault, and one removed on another device disappears here at the next sync.
 
 ### What the server can and cannot see
 
 | Stored on the server | Readable by the server |
 |---|---|
 | Your Discord user id, username and avatar | ✅ yes — this is how the account is identified |
-| Bot tokens, DM entries, preferences | ❌ no — AES-256-GCM ciphertext |
+| Bot tokens, DM entries, command scripts, preferences | ❌ no — AES-256-GCM ciphertext |
 | The key that decrypts them | ❌ never sent |
 | How many items of each kind you have | ✅ yes — the row's kind and an opaque reference are in the clear |
 
@@ -548,7 +608,9 @@ These limitations primarily come from Discord's bot API:
 - [ ] Modal interaction responses
 - [ ] Invite management
 - [ ] Stickers
-- [ ] Polls
+- [x] Polls
+- [x] Embed builder
+- [x] Command scripts
 - [ ] More bot administration tools
 
 The roadmap may change as Discord's APIs evolve.

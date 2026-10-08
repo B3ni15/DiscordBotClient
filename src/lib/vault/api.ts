@@ -32,7 +32,7 @@ export interface SessionInfo {
 }
 
 export interface VaultRecord {
-  kind: "bot" | "dm" | "settings";
+  kind: "bot" | "dm" | "settings" | "script";
   ref: string;
   ciphertext: string;
   updatedAt: string;

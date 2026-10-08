@@ -10,6 +10,13 @@ import {
   type StoredDM,
 } from "@/components/nav/dmStore";
 import {
+  getAllScripts,
+  scriptKey,
+  setAllScripts,
+  subscribeScripts,
+  type StoredScript,
+} from "@/lib/commands/scriptStore";
+import {
   getSettings,
   setSettings,
   subscribeSettings,
@@ -38,6 +45,7 @@ import {
   type Bytes,
 } from "@/lib/vault/crypto";
 import { forgetKey, recallKey, rememberKey } from "@/lib/vault/deviceKey";
+import { loadBase, saveBase, threeWayMerge } from "@/lib/vault/merge";
 import { createPasskey, evaluatePrf, PasskeyError } from "@/lib/vault/passkey";
 
 /** One bot this account can sign in as. The token is only ever stored encrypted. */
@@ -100,6 +108,8 @@ interface AccountState {
   syncDMs: () => Promise<void>;
   /** Merges notification preferences with whatever the vault holds. */
   syncSettings: () => Promise<void>;
+  /** Brings the bots' command scripts and the vault's copy into agreement. */
+  syncScripts: () => Promise<void>;
 }
 
 /** The PRF output is already uniform, so HKDF needs no salt of its own. */
@@ -115,10 +125,13 @@ let stopWatching: (() => void) | null = null;
  */
 let syncedDMs: string | null = null;
 let syncedSettings: string | null = null;
+let syncedScripts: string | null = null;
 
 /** The DM sync running right now, and whether another was asked for meanwhile. */
 let dmSync: Promise<void> | null = null;
 let dmSyncAgain = false;
+let scriptSync: Promise<void> | null = null;
+let scriptSyncAgain = false;
 
 /** The vault key lives here, outside React state, and never in storage. */
 let vaultKey: CryptoKey | null = null;
@@ -164,6 +177,7 @@ export const useAccount = create<AccountState>((set, get) => ({
         await loadItems(set);
         await get().syncDMs();
         await get().syncSettings();
+        await get().syncScripts();
         startWatching(get);
         return;
       }
@@ -235,6 +249,7 @@ export const useAccount = create<AccountState>((set, get) => ({
       // Whatever this browser already had becomes the vault's first contents.
       await get().syncDMs();
       await pushSettings();
+      await get().syncScripts();
       startWatching(get);
     } catch (cause) {
       vaultKey = null;
@@ -426,12 +441,30 @@ export const useAccount = create<AccountState>((set, get) => ({
     dmSync = (async () => {
       do {
         dmSyncAgain = false;
-        await syncDMsOnce(set);
+        const accountId = get().user?.id;
+        if (accountId) await syncDMsOnce(set, accountId);
       } while (dmSyncAgain && vaultKey);
     })().finally(() => {
       dmSync = null;
     });
     return dmSync;
+  },
+
+  syncScripts: async () => {
+    if (scriptSync) {
+      scriptSyncAgain = true;
+      return scriptSync;
+    }
+    scriptSync = (async () => {
+      do {
+        scriptSyncAgain = false;
+        const accountId = get().user?.id;
+        if (accountId) await syncScriptsOnce(set, accountId);
+      } while (scriptSyncAgain && vaultKey);
+    })().finally(() => {
+      scriptSync = null;
+    });
+    return scriptSync;
   },
 }));
 
@@ -446,6 +479,14 @@ function startWatching(get: () => AccountState) {
   stopWatching?.();
   let dmTimer: ReturnType<typeof setTimeout> | null = null;
   let settingsTimer: ReturnType<typeof setTimeout> | null = null;
+  let scriptTimer: ReturnType<typeof setTimeout> | null = null;
+  const unsubscribeScripts = subscribeScripts(() => {
+    if (scriptTimer) clearTimeout(scriptTimer);
+    scriptTimer = setTimeout(() => {
+      scriptTimer = null;
+      if (JSON.stringify(getAllScripts()) !== syncedScripts) void get().syncScripts();
+    }, 1500);
+  });
   const unsubscribeDMs = subscribeDMs(() => {
     if (dmTimer) clearTimeout(dmTimer);
     dmTimer = setTimeout(() => {
@@ -463,10 +504,13 @@ function startWatching(get: () => AccountState) {
   stopWatching = () => {
     if (dmTimer) clearTimeout(dmTimer);
     if (settingsTimer) clearTimeout(settingsTimer);
+    if (scriptTimer) clearTimeout(scriptTimer);
     unsubscribeDMs();
     unsubscribeSettings();
+    unsubscribeScripts();
     syncedDMs = null;
     syncedSettings = null;
+    syncedScripts = null;
   };
 }
 
@@ -504,6 +548,7 @@ async function finishUnlock(
   await loadItems(set);
   await get().syncDMs();
   await get().syncSettings();
+  await get().syncScripts();
   startWatching(get);
 }
 
@@ -592,54 +637,77 @@ function byLastUsed(a: SavedBot, b: SavedBot): number {
   return b.lastUsedAt - a.lastUsedAt;
 }
 
+/** Where this browser keeps the DM list as it was at the last successful sync. */
+const DM_BASE_KEY = "disbotclient:dms-synced";
+
 /**
- * Merges this browser's DM list with the vault's and writes back only the
- * records the vault does not already hold in that exact form.
+ * Brings this browser's DM list and the vault's into agreement. The vault wins
+ * wherever the two differ and this browser has not changed the DM since the
+ * last sync; a DM removed here has its vault row deleted, and a DM another
+ * device removed (its row is gone) is removed here too.
  */
-async function syncDMsOnce(set: Setter) {
+async function syncDMsOnce(set: Setter, accountId: string) {
   const key = vaultKey;
   if (!key) return;
   try {
     const { items } = await vaultApi.items();
     const remote: StoredDM[] = [];
-    const removed = { ...getRemovedDMs() };
-    /** What the vault holds per channel, to skip rewriting unchanged records. */
-    const remoteJson = new Map<string, string>();
+    /** Vault row reference per channel, for deleting it. */
+    const refs = new Map<string, string>();
+    /** Rows left behind by older versions, which marked a removal instead of deleting. */
+    const tombstones: RemovedDM[] = [];
     for (const item of items) {
       if (item.kind !== "dm") continue;
       try {
         const record = await decryptJson<StoredDM | RemovedDM>(key, item.ciphertext);
-        remoteJson.set(record.channelId, JSON.stringify(record));
-        if (isRemoved(record)) {
-          removed[record.channelId] = Math.max(removed[record.channelId] ?? 0, record.removedAt);
-        } else {
-          remote.push(record);
-        }
+        refs.set(record.channelId, item.ref);
+        if (isRemoved(record)) tombstones.push(record);
+        else remote.push(record);
       } catch {
         // A record this key cannot open is not ours to touch.
       }
     }
 
-    // A removal wins over every copy older than it; newer activity undoes it.
-    const merged = mergeDMs(getAllDMs(), remote).filter((dm) => {
-      const removedAt = removed[dm.channelId];
-      if (removedAt === undefined) return true;
-      if (dm.lastUsedAt > removedAt) {
-        delete removed[dm.channelId];
-        return true;
-      }
-      return false;
-    });
-    setRemovedDMs(removed);
-    setAllDMs(merged);
+    const removed = { ...getRemovedDMs() };
+    for (const tombstone of tombstones) {
+      removed[tombstone.channelId] = Math.max(removed[tombstone.channelId] ?? 0, tombstone.removedAt);
+    }
+    // A removal only covers what happened before it; newer activity undoes it.
+    const isRemovedHere = (dm: StoredDM) =>
+      removed[dm.channelId] !== undefined && dm.lastUsedAt <= removed[dm.channelId];
+    const local = getAllDMs().filter((dm) => !isRemovedHere(dm));
 
-    const records: Array<StoredDM | RemovedDM> = [
-      ...merged,
-      ...Object.entries(removed).map(([channelId, removedAt]) => ({ channelId, removedAt })),
-    ];
+    const merge = threeWayMerge(
+      local,
+      remote,
+      loadBase(DM_BASE_KEY, accountId),
+      (dm) => dm.channelId,
+      (_id, dm) => isRemovedHere(dm),
+    );
+
+    // Gone because another device removed it: remember that, so a scan of the
+    // old messages does not list it again.
+    const now = Date.now();
+    for (const channelId of merge.dropped) removed[channelId] = Math.max(removed[channelId] ?? 0, now);
+    for (const dm of merge.local) {
+      if (removed[dm.channelId] !== undefined && dm.lastUsedAt > removed[dm.channelId]) {
+        delete removed[dm.channelId];
+      }
+    }
+
+    const doomed = [
+      ...merge.remove,
+      ...tombstones.map((tombstone) => tombstone.channelId),
+    ].flatMap((channelId) => {
+      const ref = refs.get(channelId);
+      return ref ? [ref] : [];
+    });
+    for (let index = 0; index < doomed.length; index += 100) {
+      await vaultApi.removeItems("dm", doomed.slice(index, index + 100));
+    }
+
     const payload = [];
-    for (const record of records) {
-      if (remoteJson.get(record.channelId) === JSON.stringify(record)) continue;
+    for (const record of merge.push) {
       payload.push({
         kind: "dm",
         ref: await itemRef(key, "dm", record.channelId),
@@ -650,13 +718,81 @@ async function syncDMsOnce(set: Setter) {
     for (let index = 0; index < payload.length; index += 100) {
       await vaultApi.putItems(payload.slice(index, index + 100));
     }
+
+    // Only once the vault has caught up does this become the agreed state.
+    saveBase(DM_BASE_KEY, accountId, merge.base);
+    setRemovedDMs(removed);
+    setAllDMs(sortDMs(merge.local));
     syncedDMs = dmSnapshot();
   } catch (cause) {
     set({ error: message(cause, "Could not sync direct messages.") });
   }
 }
 
-/** What a removed DM leaves in the vault, under the same reference it had. */
+/** Where this browser keeps the scripts as they were at the last successful sync. */
+const SCRIPT_BASE_KEY = "disbotclient:command-scripts-synced";
+
+/** Same rules as the DM sync: the vault wins, and a removal deletes the row. */
+async function syncScriptsOnce(set: Setter, accountId: string) {
+  const key = vaultKey;
+  if (!key) return;
+  try {
+    const { items } = await vaultApi.items();
+    const remote: StoredScript[] = [];
+    const refs = new Map<string, string>();
+    for (const item of items) {
+      if (item.kind !== "script") continue;
+      try {
+        const record = await decryptJson<StoredScript>(key, item.ciphertext);
+        const id = scriptKey(record.botId, record.name);
+        refs.set(id, item.ref);
+        remote.push(record);
+      } catch {
+        // Written under another key.
+      }
+    }
+
+    const merge = threeWayMerge(
+      getAllScripts(),
+      remote,
+      loadBase(SCRIPT_BASE_KEY, accountId),
+      (script) => scriptKey(script.botId, script.name),
+    );
+
+    const doomed = merge.remove.flatMap((id) => {
+      const ref = refs.get(id);
+      return ref ? [ref] : [];
+    });
+    if (doomed.length > 0) await vaultApi.removeItems("script", doomed);
+
+    const payload = [];
+    for (const record of merge.push) {
+      payload.push({
+        kind: "script",
+        ref: await itemRef(key, "script", scriptKey(record.botId, record.name)),
+        ciphertext: await encryptJson(key, record),
+      });
+    }
+    for (let index = 0; index < payload.length; index += 50) {
+      await vaultApi.putItems(payload.slice(index, index + 50));
+    }
+
+    saveBase(SCRIPT_BASE_KEY, accountId, merge.base);
+    // Newest edit first, with the key as a stable tie-break.
+    setAllScripts(
+      [...merge.local].sort(
+        (a, b) =>
+          b.updatedAt - a.updatedAt ||
+          scriptKey(a.botId, a.name).localeCompare(scriptKey(b.botId, b.name)),
+      ),
+    );
+    syncedScripts = JSON.stringify(getAllScripts());
+  } catch (cause) {
+    set({ error: message(cause, "Could not sync command scripts.") });
+  }
+}
+
+/** What older versions left in the vault for a removed DM, instead of deleting it. */
 interface RemovedDM {
   channelId: string;
   removedAt: number;
@@ -671,21 +807,13 @@ function dmSnapshot(): string {
   return JSON.stringify([getAllDMs(), getRemovedDMs()]);
 }
 
-/** Local and remote DM lists, with the more recently used copy winning. */
-function mergeDMs(local: StoredDM[], remote: StoredDM[]): StoredDM[] {
-  const byChannel = new Map<string, StoredDM>();
-  for (const dm of [...remote, ...local]) {
-    const existing = byChannel.get(dm.channelId);
-    const winner = !existing || dm.lastUsedAt > existing.lastUsedAt ? dm : existing;
-    // Which bot a DM belongs to never changes once known, so an older copy
-    // written before it was claimed must not un-claim it.
-    const botId = winner.botId ?? dm.botId ?? existing?.botId;
-    byChannel.set(dm.channelId, botId ? { ...winner, botId } : winner);
-  }
-  // Ties fall back to the channel id: the vault hands records back in whatever
-  // order they were last written, and an order that flips between syncs would
-  // look like a change and trigger yet another sync.
-  return [...byChannel.values()].sort(
+/**
+ * Most recently used first. Ties fall back to the channel id: the vault hands
+ * records back in whatever order they were last written, and an order that
+ * flips between syncs would look like a change and trigger yet another sync.
+ */
+function sortDMs(dms: StoredDM[]): StoredDM[] {
+  return [...dms].sort(
     (a, b) => b.lastUsedAt - a.lastUsedAt || (a.channelId < b.channelId ? -1 : a.channelId > b.channelId ? 1 : 0),
   );
 }

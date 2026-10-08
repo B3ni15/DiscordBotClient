@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { APIMessage } from "discord-api-types/v10";
+import { EmbedCreator } from "@/components/actions/EmbedCreator";
 import { EmojiPicker } from "@/components/actions/EmojiPicker";
 import { PollCreator } from "@/components/actions/PollCreator";
 import { Spinner } from "@/components/ui/Spinner";
@@ -37,6 +38,10 @@ export function Composer({
   const [sending, setSending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pollOpen, setPollOpen] = useState(false);
+  const [embedOpen, setEmbedOpen] = useState(false);
+  const guildId = useClient(
+    (state) => (state.channelsById[channelId] as { guild_id?: string } | undefined)?.guild_id ?? null,
+  );
   const lastTypingAt = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -227,6 +232,15 @@ export function Composer({
         >
           <span aria-hidden>📊</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setEmbedOpen(true)}
+          aria-label="Create an embed"
+          title="Create an embed"
+          className="shrink-0 self-end pb-0.5 text-xl leading-none grayscale transition-all hover:scale-110 hover:grayscale-0"
+        >
+          <span aria-hidden>🧩</span>
+        </button>
         <textarea
           ref={textarea}
           rows={1}
@@ -241,6 +255,26 @@ export function Composer({
       </div>
 
       {pollOpen && <PollCreator channelId={channelId} onClose={() => setPollOpen(false)} />}
+      {embedOpen && (
+        <EmbedCreator
+          confirmLabel="Send"
+          withContent
+          guildId={guildId}
+          onClose={() => setEmbedOpen(false)}
+          onConfirm={async ({ content: text, embed }) => {
+            await api.sendMessage(getRest(), channelId, {
+              content: text || undefined,
+              embeds: [embed],
+              message_reference: replyTo
+                ? { message_id: replyTo.id, channel_id: channelId, fail_if_not_exists: false }
+                : undefined,
+            });
+            // The message itself arrives over the gateway as MESSAGE_CREATE.
+            onCancelReply?.();
+            setEmbedOpen(false);
+          }}
+        />
+      )}
 
       {error && (
         <p role="alert" className="mt-2 animate-fade-in text-xs text-danger">
