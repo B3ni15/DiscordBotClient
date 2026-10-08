@@ -1,7 +1,7 @@
 import { db } from "@/lib/server/db";
 import { currentUser, newId } from "@/lib/server/session";
 
-const KINDS = new Set(["bot", "dm", "settings", "script"]);
+const KINDS = new Set(["bot", "dm", "settings", "script", "readstate"]);
 const MAX_ITEMS = 2000;
 const MAX_CIPHERTEXT = 64 * 1024;
 const MAX_BATCH = 200;

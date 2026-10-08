@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { showNotification } from "@/lib/notifications/serviceWorker";
 import {
   requestNotificationPermission,
   useNotificationPermission,
@@ -34,6 +36,25 @@ export function NotificationSettings({ className }: NotificationSettingsProps) {
   const permission = useNotificationPermission();
   const channelsById = useClient((state) => state.channelsById);
   const guilds = useClient((state) => state.guilds);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  async function sendTest() {
+    const permission =
+      Notification.permission === "default"
+        ? await requestNotificationPermission()
+        : Notification.permission;
+    if (permission !== "granted") {
+      setTestResult("Notifications are not allowed for this site.");
+      return;
+    }
+    const shown = await showNotification("disbotclient", {
+      body: "Notifications are working.",
+      icon: "/icons/icon-192.png",
+      tag: "disbotclient:test",
+      url: "/channels/@me",
+    });
+    setTestResult(shown ? "Sent — it should be on screen now." : "This browser refused to show it.");
+  }
 
   return (
     <section className={className}>
@@ -41,11 +62,16 @@ export function NotificationSettings({ className }: NotificationSettingsProps) {
 
       <div className="rounded border border-line bg-raised px-3 py-3">
         <label className="flex items-center justify-between gap-3 text-sm">
-          <span>Desktop notifications</span>
+          <span>Notifications</span>
           <input
             type="checkbox"
             checked={settings.enabled}
-            onChange={(event) => patchSettings({ enabled: event.target.checked })}
+            onChange={(event) => {
+              const enabled = event.target.checked;
+              patchSettings({ enabled });
+              // Turning them on is the gesture the browser wants for its prompt.
+              if (enabled && permission === "default") void requestNotificationPermission();
+            }}
             className="h-4 w-4 accent-[var(--accent)]"
           />
         </label>
@@ -113,6 +139,21 @@ export function NotificationSettings({ className }: NotificationSettingsProps) {
             of your browser.
           </p>
         )}
+        {permission !== "unsupported" && permission !== "denied" && (
+          <button
+            type="button"
+            onClick={() => void sendTest()}
+            className="mt-2 w-full rounded border border-line px-3 py-1.5 text-xs transition-colors hover:bg-hover"
+          >
+            Send a test notification
+          </button>
+        )}
+        {testResult && <p className="mt-1.5 text-xs text-muted">{testResult}</p>}
+        <p className="mt-2 text-[11px] leading-relaxed text-faint">
+          Notifications come while the client is open, in the background too. On an iPhone or
+          iPad, add the site to the Home Screen first — iOS only notifies installed apps.
+          Messages that arrive while the client is closed are counted when it opens again.
+        </p>
       </div>
 
       <div className="mt-3">

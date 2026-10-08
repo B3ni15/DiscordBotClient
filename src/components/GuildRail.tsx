@@ -7,7 +7,7 @@ import { guildMenuItems } from "@/components/context/menus";
 import { UnreadBadge } from "@/components/notifications/UnreadBadge";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { guildAcronym, guildIconUrl } from "@/lib/discord/cdn";
-import { useGuildUnread } from "@/lib/notifications/unread";
+import { useDMUnread, useGuildUnread } from "@/lib/notifications/unread";
 import { useClient } from "@/lib/store/client";
 import { openMenuFor } from "@/lib/store/contextMenu";
 import { useUI } from "@/lib/store/ui";
@@ -24,6 +24,7 @@ export function GuildRail() {
   const togglePanel = useUI((state) => state.togglePanel);
   const settingsOpen = useUI((state) => state.panel === "settings");
   const commandsOpen = useUI((state) => state.panel === "commands");
+  const dmUnread = useDMUnread();
 
   const connecting = status !== "ready" && guildOrder.length === 0;
 
@@ -37,6 +38,7 @@ export function GuildRail() {
         active={dmMode}
         onSelect={() => setDmMode(true)}
         className="text-2xl leading-none"
+        badge={dmUnread}
       >
         <span aria-hidden>@</span>
       </RailItem>

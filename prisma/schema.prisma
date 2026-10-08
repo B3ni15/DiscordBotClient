@@ -77,7 +77,7 @@ model KeyWrapper {
 model VaultItem {
   id     String @id
   userId String
-  /// "bot" | "dm" | "settings" | "script" — plaintext, because the sync has to query it.
+  /// "bot" | "dm" | "settings" | "script" | "readstate" — plaintext, because the sync has to query it.
   kind String
   /// Opaque, stable handle for the record: HMAC of its real id under the vault
   /// key, so two devices agree on it while the server cannot read it.

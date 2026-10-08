@@ -17,6 +17,12 @@ import {
   type StoredScript,
 } from "@/lib/commands/scriptStore";
 import {
+  getReadState,
+  mergeReadState,
+  subscribeReadState,
+  type ReadState,
+} from "@/lib/notifications/readState";
+import {
   getSettings,
   setSettings,
   subscribeSettings,
@@ -110,6 +116,8 @@ interface AccountState {
   syncSettings: () => Promise<void>;
   /** Brings the bots' command scripts and the vault's copy into agreement. */
   syncScripts: () => Promise<void>;
+  /** Merges where each channel was last read with the vault's copy. */
+  syncReadState: () => Promise<void>;
 }
 
 /** The PRF output is already uniform, so HKDF needs no salt of its own. */
@@ -126,6 +134,7 @@ let stopWatching: (() => void) | null = null;
 let syncedDMs: string | null = null;
 let syncedSettings: string | null = null;
 let syncedScripts: string | null = null;
+let syncedReadState: string | null = null;
 
 /** The DM sync running right now, and whether another was asked for meanwhile. */
 let dmSync: Promise<void> | null = null;
@@ -178,6 +187,7 @@ export const useAccount = create<AccountState>((set, get) => ({
         await get().syncDMs();
         await get().syncSettings();
         await get().syncScripts();
+        await get().syncReadState();
         startWatching(get);
         return;
       }
@@ -250,6 +260,7 @@ export const useAccount = create<AccountState>((set, get) => ({
       await get().syncDMs();
       await pushSettings();
       await get().syncScripts();
+      await get().syncReadState();
       startWatching(get);
     } catch (cause) {
       vaultKey = null;
@@ -466,7 +477,33 @@ export const useAccount = create<AccountState>((set, get) => ({
     });
     return scriptSync;
   },
+
+  syncReadState: one(() => syncReadStateOnce()),
 }));
+
+/**
+ * Wraps a sync so only one runs at a time; anything asked for meanwhile is
+ * folded into a single extra run.
+ */
+function one(run: () => Promise<void>): () => Promise<void> {
+  let running: Promise<void> | null = null;
+  let again = false;
+  return () => {
+    if (running) {
+      again = true;
+      return running;
+    }
+    running = (async () => {
+      do {
+        again = false;
+        await run();
+      } while (again && vaultKey);
+    })().finally(() => {
+      running = null;
+    });
+    return running;
+  };
+}
 
 type Setter = (partial: Partial<AccountState> | ((state: AccountState) => Partial<AccountState>)) => void;
 
@@ -480,6 +517,15 @@ function startWatching(get: () => AccountState) {
   let dmTimer: ReturnType<typeof setTimeout> | null = null;
   let settingsTimer: ReturnType<typeof setTimeout> | null = null;
   let scriptTimer: ReturnType<typeof setTimeout> | null = null;
+  let readTimer: ReturnType<typeof setTimeout> | null = null;
+  // Read markers move with every message looked at; one push per half minute is plenty.
+  const unsubscribeReadState = subscribeReadState(() => {
+    if (readTimer) return;
+    readTimer = setTimeout(() => {
+      readTimer = null;
+      if (JSON.stringify(getReadState()) !== syncedReadState) void get().syncReadState();
+    }, 30_000);
+  });
   const unsubscribeScripts = subscribeScripts(() => {
     if (scriptTimer) clearTimeout(scriptTimer);
     scriptTimer = setTimeout(() => {
@@ -505,12 +551,15 @@ function startWatching(get: () => AccountState) {
     if (dmTimer) clearTimeout(dmTimer);
     if (settingsTimer) clearTimeout(settingsTimer);
     if (scriptTimer) clearTimeout(scriptTimer);
+    if (readTimer) clearTimeout(readTimer);
+    unsubscribeReadState();
     unsubscribeDMs();
     unsubscribeSettings();
     unsubscribeScripts();
     syncedDMs = null;
     syncedSettings = null;
     syncedScripts = null;
+    syncedReadState = null;
   };
 }
 
@@ -549,6 +598,7 @@ async function finishUnlock(
   await get().syncDMs();
   await get().syncSettings();
   await get().syncScripts();
+  await get().syncReadState();
   startWatching(get);
 }
 
@@ -789,6 +839,74 @@ async function syncScriptsOnce(set: Setter, accountId: string) {
     syncedScripts = JSON.stringify(getAllScripts());
   } catch (cause) {
     set({ error: message(cause, "Could not sync command scripts.") });
+  }
+}
+
+/**
+ * Read markers are split into a few records per bot, by channel id, so a bot
+ * in a great many servers stays under the vault's size limit per record.
+ */
+const READ_STATE_PARTS = 16n;
+
+interface ReadStateRecord {
+  botId: string;
+  part: number;
+  marks: Record<string, string>;
+}
+
+function readStateRecords(state: ReadState): ReadStateRecord[] {
+  const records: ReadStateRecord[] = [];
+  for (const [botId, marks] of Object.entries(state)) {
+    const parts = new Map<number, Record<string, string>>();
+    for (const [channelId, messageId] of Object.entries(marks)) {
+      const part = Number(BigInt(channelId) % READ_STATE_PARTS);
+      parts.set(part, { ...(parts.get(part) ?? {}), [channelId]: messageId });
+    }
+    for (const [part, partMarks] of parts) records.push({ botId, part, marks: partMarks });
+  }
+  return records;
+}
+
+/**
+ * Markers only move forward, so merging is "newest per channel" in both
+ * directions: the vault's are folded in here, then every part this browser
+ * has moved further is written back.
+ */
+async function syncReadStateOnce() {
+  const key = vaultKey;
+  if (!key) return;
+  try {
+    const { items } = await vaultApi.items();
+    const remote: ReadState = {};
+    const remoteJson = new Map<string, string>();
+    for (const item of items) {
+      if (item.kind !== "readstate") continue;
+      try {
+        const record = await decryptJson<ReadStateRecord>(key, item.ciphertext);
+        remote[record.botId] = { ...(remote[record.botId] ?? {}), ...record.marks };
+        remoteJson.set(`${record.botId}:${record.part}`, JSON.stringify(record.marks));
+      } catch {
+        // Written under another key.
+      }
+    }
+    mergeReadState(remote);
+
+    const payload = [];
+    for (const record of readStateRecords(getReadState())) {
+      const id = `${record.botId}:${record.part}`;
+      if (remoteJson.get(id) === JSON.stringify(record.marks)) continue;
+      payload.push({
+        kind: "readstate",
+        ref: await itemRef(key, "readstate", id),
+        ciphertext: await encryptJson(key, record),
+      });
+    }
+    for (let index = 0; index < payload.length; index += 50) {
+      await vaultApi.putItems(payload.slice(index, index + 50));
+    }
+    syncedReadState = JSON.stringify(getReadState());
+  } catch {
+    // Best-effort: the markers are still kept in this browser.
   }
 }
 

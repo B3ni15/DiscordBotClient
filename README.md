@@ -59,7 +59,7 @@ It runs entirely from the browser, connects directly to the Discord Gateway, and
 | 📎 | **Attachments** | Images, video, audio, uploads, embeds and image lightbox |
 | 📌 | **Pins** | Browse and manage pinned messages |
 | 💌 | **DMs** | Open direct conversations by user ID and remember them locally |
-| 🔔 | **Notifications** | Desktop notifications, unread badges and local mutes |
+| 🔔 | **Notifications** | Notifications on desktop and phone, unread badges that catch up on everything since you last looked, local mutes |
 | 🛠️ | **Bot tooling** | Manage slash commands and handle incoming interactions |
 | 📜 | **Command scripts** | Write a JavaScript handler for a slash command in the browser; it answers the command automatically |
 | 🏛️ | **Server management** | Create, edit and delete channels, categories and roles; per-channel/category permission overwrites |
@@ -435,7 +435,27 @@ the inbox — only while the application has no Interactions Endpoint URL.
 
 ## 🔔 Notifications
 
-Desktop notifications are available for incoming activity, with local controls for:
+Notifications are shown through a service worker, so they work on phones and in
+the installed app as well as on desktop — the client can be installed from the
+browser ("Add to Home Screen"), which iOS requires before it shows any. A click
+on one opens the client on that channel. **Settings → Notifications** asks for
+permission when they are turned on and can send a test notification.
+
+### Unread since you last looked
+
+Every channel remembers the newest message that was on screen when you last
+read it. When the client connects it compares that with each channel's latest
+message and fetches what came in meanwhile, so the badges count every message
+since you last looked — including everything said while the client was closed.
+Channels and DMs get a count, servers and the DM button a total, and the tab
+title and the installed app's icon carry the overall number. Opening a channel,
+or writing in it, marks it read. With account sync on, the read markers follow
+you between devices.
+
+Notifications themselves need the client open (in the background is enough):
+the Discord connection lives in the page, and nothing else holds the bot token.
+
+Local controls:
 
 - Per-channel mute
 - Per-server mute
@@ -499,7 +519,7 @@ If you want the smallest possible trust boundary, self-host the application.
 
 Sync is **optional**. With no account configured — or no account signed in — DisbotClient behaves exactly as it always has: everything lives in the browser and the server stores nothing.
 
-Sign in with Discord and the app gains a vault: your saved bots, the DM list, your command scripts and your notification preferences follow you between devices.
+Sign in with Discord and the app gains a vault: your saved bots, the DM list, your command scripts, where you last read each channel and your notification preferences follow you between devices.
 
 The DM list and the scripts are kept in step with a three-way merge against the state of the last sync. Where this browser and the vault disagree and this browser has not changed the record since, the vault's copy wins. Removing a DM (or a script) deletes its row from the vault, and one removed on another device disappears here at the next sync.
 
