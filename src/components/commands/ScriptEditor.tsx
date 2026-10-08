@@ -253,7 +253,7 @@ export function ScriptEditor({
         spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"
-        placeholder={EXAMPLE_SCRIPT}
+        placeholder="No handler yet — this command only shows up under Incoming. Write one here, or start from “Use example”."
         aria-label="Command handler code"
         className={`${INPUT} min-h-40 resize-y font-mono text-xs leading-relaxed whitespace-pre`}
       />
