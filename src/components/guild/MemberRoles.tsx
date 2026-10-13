@@ -234,7 +234,7 @@ function RolePicker({
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Role"
           aria-label="Search roles"
-          className="w-full rounded bg-ink py-1.5 pr-8 pl-2 text-sm text-text outline-none placeholder:text-faint"
+          className="w-full rounded bg-ink py-1.5 pr-8 pl-2 text-sm text-text outline-none placeholder:text-faint focus:shadow-[0_0_0_1px_var(--accent)]"
         />
         <span className="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-muted">
           <SearchIcon size={14} />

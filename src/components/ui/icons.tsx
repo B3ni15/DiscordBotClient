@@ -369,8 +369,8 @@ export function LockIcon(props: IconProps) {
 export function KeyIcon(props: IconProps) {
   return (
     <Stroke {...props}>
-      <circle cx="7.5" cy="15.5" r="5.5" />
-      <path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3" />
+      <path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a2 2 0 0 0 1.4-.6l.8-.8a6.5 6.5 0 1 0-4-4Z" />
+      <circle cx="16.5" cy="7.5" r="1" fill="currentColor" />
     </Stroke>
   );
 }

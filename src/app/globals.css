@@ -73,9 +73,15 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/*
+ * In the base layer, so a utility such as focus-visible:outline-none on a field
+ * that draws its own focus ring can still switch it off.
+ */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 }
 
 /* Discord's scrollbars: invisible until the surface is hovered. */
@@ -250,4 +256,73 @@ body {
 
 .loader-ring {
   animation: loader-ripple 1.8s ease-out infinite;
+}
+
+/* Long-form text on the Terms and Privacy pages. */
+.legal-prose section + section {
+  margin-top: 2.5rem;
+}
+.legal-prose h2 {
+  margin-bottom: 0.75rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--bright);
+}
+.legal-prose h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--bright);
+}
+.legal-prose p,
+.legal-prose li {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.legal-prose p + p {
+  margin-top: 0.75rem;
+}
+.legal-prose ul {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+.legal-prose li::marker {
+  color: var(--faint);
+}
+.legal-prose a {
+  color: var(--link);
+}
+.legal-prose a:hover {
+  text-decoration: underline;
+}
+.legal-prose strong {
+  font-weight: 600;
+  color: var(--bright);
+}
+.legal-prose code {
+  border-radius: 4px;
+  background: var(--panel);
+  padding: 0.1rem 0.35rem;
+  font-family: var(--font-app-mono), monospace;
+  font-size: 0.85em;
+}
+
+/* The sign-in page's colour washes drift slowly behind the card. */
+@keyframes login-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(40px, 30px) scale(1.08);
+  }
+}
+
+.login-blob {
+  animation: login-drift 14s ease-in-out infinite;
 }
