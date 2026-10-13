@@ -6,6 +6,7 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
+import { GearIcon, PowerIcon } from "@/components/ui/icons";
 
 /**
  * The strip at the bottom of the sidebar: who the client is signed in as, how
@@ -92,7 +93,7 @@ export function UserPanel() {
           aria-label="Settings"
           className="grid h-8 w-8 place-items-center rounded text-base text-muted transition-colors hover:bg-hover hover:text-bright"
         >
-          <span aria-hidden>⚙</span>
+          <GearIcon size={20} />
         </button>
       </Tooltip>
       <Tooltip label="Sign out">
@@ -102,7 +103,7 @@ export function UserPanel() {
           aria-label="Sign out"
           className="grid h-8 w-8 place-items-center rounded text-base text-muted transition-colors hover:bg-hover hover:text-danger"
         >
-          <span aria-hidden>⏻</span>
+          <PowerIcon size={18} />
         </button>
       </Tooltip>
     </div>

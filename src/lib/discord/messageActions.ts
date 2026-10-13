@@ -1,4 +1,4 @@
-import { AllowedMentionsTypes } from "discord-api-types/v10";
+import { AllowedMentionsTypes, MessageReferenceType } from "discord-api-types/v10";
 import type {
   APIMessage,
   APIUser,
@@ -63,14 +63,36 @@ export function replyToMessage(
   channelId: string,
   messageId: string,
   content: string,
-  options: { mention?: boolean } = {},
+  options: { mention?: boolean; files?: File[] } = {},
 ) {
   const body: RESTPostAPIChannelMessageJSONBody = {
     content,
     message_reference: { message_id: messageId, channel_id: channelId, fail_if_not_exists: false },
     allowed_mentions: { replied_user: options.mention ?? false, parse: [AllowedMentionsTypes.User, AllowedMentionsTypes.Role] },
   };
+  if (options.files?.length) return api.sendMessageWithFiles(rest, channelId, body, options.files);
   return api.sendMessage(rest, channelId, body);
+}
+
+/**
+ * Forwards a message into another channel, the way Discord's "Forward" does:
+ * the new message carries a snapshot of the original rather than a copy of its
+ * text, so it shows up as forwarded and links back to where it came from.
+ */
+export function forwardMessage(
+  rest: RestClient,
+  message: Pick<APIMessage, "id" | "channel_id"> & { guild_id?: string | null },
+  targetChannelId: string,
+) {
+  return api.sendMessage(rest, targetChannelId, {
+    message_reference: {
+      type: MessageReferenceType.Forward,
+      message_id: message.id,
+      channel_id: message.channel_id,
+      guild_id: message.guild_id ?? undefined,
+      fail_if_not_exists: true,
+    },
+  });
 }
 
 export function addReaction(

@@ -15,6 +15,8 @@ import {
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
 import { SoundboardIcon } from "./icons";
+import { CloseIcon, PlayIcon, TrashStrokeIcon } from "@/components/ui/icons";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 export interface SoundboardProps {
   onClose?: () => void;
@@ -168,7 +170,7 @@ export function Soundboard({ onClose }: SoundboardProps) {
               aria-label="Close panel"
               className="text-muted hover:text-text"
             >
-              ✕
+              <CloseIcon size={18} />
             </button>
           )}
         </div>
@@ -251,7 +253,11 @@ function SoundSection({
     <section className="mb-4">
       <h3 className="mb-1.5 text-[11px] font-bold tracking-wide text-muted uppercase">{title}</h3>
       {loading ? (
-        <p className="text-xs text-muted">Loading…</p>
+        <div aria-label="Loading sounds" className="grid grid-cols-2 gap-1.5">
+          {Array.from({ length: 4 }, (_, index) => (
+            <Skeleton key={index} height={32} rounded="md" />
+          ))}
+        </div>
       ) : sounds.length === 0 ? (
         <p className="text-xs leading-relaxed text-muted">{empty}</p>
       ) : (
@@ -280,7 +286,7 @@ function SoundSection({
                 title="Preview here, without sending it to Discord"
                 className="grid h-7 w-7 shrink-0 place-items-center rounded text-xs text-faint opacity-0 transition-opacity group-hover/sound:opacity-100 focus-visible:opacity-100 hover:bg-hover hover:text-bright"
               >
-                ▶
+                <PlayIcon size={14} />
               </button>
               {onDelete && canDelete?.(sound) && (
                 <button
@@ -289,7 +295,7 @@ function SoundSection({
                   aria-label={`Delete ${sound.name}`}
                   className="grid h-7 w-7 shrink-0 place-items-center rounded text-xs text-faint opacity-0 transition-opacity group-hover/sound:opacity-100 focus-visible:opacity-100 hover:bg-hover hover:text-danger"
                 >
-                  🗑
+                  <TrashStrokeIcon size={15} />
                 </button>
               )}
             </li>

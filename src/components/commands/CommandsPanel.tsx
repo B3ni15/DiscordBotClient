@@ -5,6 +5,7 @@ import { CommandEditor } from "@/components/commands/CommandEditor";
 import { CommandList } from "@/components/commands/CommandList";
 import { InteractionInbox } from "@/components/commands/InteractionInbox";
 import { useInteractions } from "@/lib/commands/useInteractions";
+import { CloseIcon } from "@/components/ui/icons";
 
 export interface CommandsPanelProps {
   className?: string;
@@ -41,7 +42,7 @@ export function CommandsPanel({ className, onClose }: CommandsPanelProps) {
             aria-label="Close panel"
             className="text-muted hover:text-text"
           >
-            ✕
+            <CloseIcon size={18} />
           </button>
         )}
       </header>

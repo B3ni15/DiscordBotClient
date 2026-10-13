@@ -27,12 +27,15 @@ import {
   validateCommandName,
   validateDescription,
   validateDraft,
+  validateHandler,
+  EVERYWHERE,
   type CommandDraft,
   type DraftOption,
   type EditableOptionType,
 } from "@/lib/commands/validation";
 import { commandApi } from "@/lib/discord/commandApi";
 import { useClient } from "@/lib/store/client";
+import { CloseIcon } from "@/components/ui/icons";
 
 export interface CommandEditorProps {
   /** Default scope for a new command. Falls back to the selected guild. */
@@ -107,7 +110,8 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
       ? draftFromOptions(command.name, command.description, command.options)
       : emptyDraft(),
   );
-  const [target, setTarget] = useState<string | null>(scope);
+  // A new command defaults to global, so it works in every server and in DMs.
+  const [target, setTarget] = useState<string | null>(command ? scope : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -147,6 +151,15 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
       setError("The application id is not available yet.");
       return;
     }
+    const handlerProblem = validateHandler(code);
+    if (handlerProblem) {
+      setError(handlerProblem);
+      return;
+    }
+    if (!scriptEnabled && !command) {
+      setError("A new command has to start switched on, or it would do nothing.");
+      return;
+    }
     if (scriptBytes(code) > SCRIPT_MAX_BYTES) {
       setError(`The handler is too large; keep it under ${SCRIPT_MAX_BYTES / 1000} kB.`);
       return;
@@ -154,7 +167,7 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
     setBusy(true);
     setError(null);
     try {
-      const body = draftToBody(draft);
+      const body = target ? draftToBody(draft) : { ...draftToBody(draft), ...EVERYWHERE };
       if (command) {
         await commandApi.edit(getRest(), applicationId, command.id, body, target);
       } else {
@@ -170,16 +183,14 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
           (initialScript?.code ?? "") === code &&
           (initialScript?.enabled ?? true) === scriptEnabled;
         // Re-saving an untouched script would only bump its date and re-sync it.
-        if (!unchanged) {
-          if (code.trim()) saveScript(botId, name, code, scriptEnabled);
-          else removeScript(botId, name);
-        }
+        // Validation above guarantees there is a handler to save.
+        if (!unchanged) saveScript(botId, name, code, scriptEnabled);
       }
       bump();
       setSuccess(
         target
           ? "Saved. Server commands are live right away."
-          : "Saved. Global commands can take up to an hour to propagate.",
+          : "Saved. It works in every server and in DMs; new global commands can take a few minutes to appear.",
       );
       if (!command) stopEditing();
     } catch (cause) {
@@ -209,7 +220,7 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
           disabled={Boolean(command)}
           className={`${INPUT} disabled:opacity-60`}
         >
-          <option value="">Global (every server)</option>
+          <option value="">Everywhere (every server and DMs)</option>
           {guildOrder.map((id) => (
             <option key={id} value={id}>
               {guilds[id]?.name ?? id}
@@ -220,7 +231,7 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
       <p className="text-[11px] leading-relaxed text-muted">
         {target
           ? "Server commands go live immediately in the chosen server."
-          : "Global commands can take up to an hour to appear in Discord."}
+          : "Works in every server the bot is in and in DMs with the bot. New global commands can take a few minutes to show up."}
         {command && " The scope of an existing command cannot be changed — delete and recreate it."}
       </p>
 
@@ -314,7 +325,7 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
                 aria-label="Remove option"
                 className="rounded border border-line px-1.5 text-[11px] text-danger hover:bg-danger/10"
               >
-                ✕
+                <CloseIcon size={12} />
               </button>
             </div>
 
@@ -430,7 +441,7 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
                         aria-label="Remove choice"
                         className="rounded border border-line px-1.5 text-[11px] text-danger hover:bg-danger/10"
                       >
-                        ✕
+                        <CloseIcon size={12} />
                       </button>
                     </div>
                   ))}

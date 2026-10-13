@@ -7,20 +7,28 @@ import { Field, Modal, ModalActions, Switch, inputClass } from "@/components/ui/
 import { guildApi, type ChannelBody } from "@/lib/discord/guildApi";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
+import {
+  AnnouncementIcon,
+  FolderIcon,
+  ForumIcon,
+  HashIcon,
+  SpeakerIcon,
+  StageIcon,
+} from "@/components/ui/icons";
 
 /** The channel kinds this client can create, in Discord's own order. */
-const CREATABLE: Array<{ type: ChannelType; label: string; glyph: string; blurb: string }> = [
-  { type: ChannelType.GuildText, label: "Text", glyph: "#", blurb: "Send messages, images and files." },
-  { type: ChannelType.GuildVoice, label: "Voice", glyph: "🔊", blurb: "Hang out together with voice and video." },
+const CREATABLE: Array<{ type: ChannelType; label: string; Glyph: (props: { size?: number }) => React.ReactNode; blurb: string }> = [
+  { type: ChannelType.GuildText, label: "Text", Glyph: HashIcon, blurb: "Send messages, images and files." },
+  { type: ChannelType.GuildVoice, label: "Voice", Glyph: SpeakerIcon, blurb: "Hang out together with voice and video." },
   {
     type: ChannelType.GuildAnnouncement,
     label: "Announcement",
-    glyph: "📢",
+    Glyph: AnnouncementIcon,
     blurb: "Posts can be published to following servers.",
   },
-  { type: ChannelType.GuildStageVoice, label: "Stage", glyph: "📡", blurb: "An audience listens to the speakers." },
-  { type: ChannelType.GuildForum, label: "Forum", glyph: "🗂", blurb: "Conversations live in their own posts." },
-  { type: ChannelType.GuildCategory, label: "Category", glyph: "📁", blurb: "Groups channels together." },
+  { type: ChannelType.GuildStageVoice, label: "Stage", Glyph: StageIcon, blurb: "An audience listens to the speakers." },
+  { type: ChannelType.GuildForum, label: "Forum", Glyph: ForumIcon, blurb: "Conversations live in their own posts." },
+  { type: ChannelType.GuildCategory, label: "Category", Glyph: FolderIcon, blurb: "Groups channels together." },
 ];
 
 const SLOWMODE_STEPS = [0, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21600];
@@ -197,8 +205,8 @@ export function ChannelEditor({
                     type === entry.type ? "bg-raised" : "bg-ink hover:bg-hover"
                   }`}
                 >
-                  <span aria-hidden className="w-5 text-center text-base text-muted">
-                    {entry.glyph}
+                  <span className="text-muted">
+                    <entry.Glyph size={22} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium text-bright">{entry.label}</span>

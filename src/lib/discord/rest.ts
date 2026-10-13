@@ -46,6 +46,7 @@ export class RestClient {
   #buckets = new Map<string, Bucket>();
   /** Set while a global rate limit is in effect; every request awaits it. */
   #globalLock: Promise<void> | null = null;
+  #rateLimitHits = 0;
 
   constructor(token: string) {
     this.#token = token;
@@ -53,6 +54,14 @@ export class RestClient {
 
   setToken(token: string) {
     this.#token = token;
+  }
+
+  /**
+   * How many 429s this client has run into. The client waits each one out on
+   * its own; callers that pace bulk work read this to slow themselves down.
+   */
+  get rateLimitHits(): number {
+    return this.#rateLimitHits;
   }
 
   get<T>(path: string, options?: Omit<RequestOptions, "method" | "body" | "form">) {
@@ -122,6 +131,7 @@ export class RestClient {
       this.#readRateLimitHeaders(response, bucket);
 
       if (response.status === 429) {
+        this.#rateLimitHits += 1;
         const payload = (await response.json().catch(() => ({}))) as {
           retry_after?: number;
           global?: boolean;

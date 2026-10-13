@@ -2,9 +2,10 @@
 
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { CheckIcon, ChevronRightIcon, MenuGlyph } from "@/components/ui/icons";
 import { useContextMenu, type MenuItem } from "@/lib/store/contextMenu";
 
-const MENU_WIDTH = 200;
+const MENU_WIDTH = 220;
 const SUBMENU_WIDTH = 240;
 const EDGE_PADDING = 8;
 /** A submenu overlaps its parent slightly, so the pointer never leaves a menu. */
@@ -320,7 +321,7 @@ function FloatingPanel({
       aria-label={label}
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className={`pointer-events-auto fixed animate-pop-in rounded border border-black/40 bg-floating p-1.5 shadow-[0_8px_16px_rgba(0,0,0,0.24)] outline-none ${
+      className={`pointer-events-auto fixed animate-pop-in rounded-lg border border-white/5 bg-floating p-1.5 shadow-[0_8px_16px_rgba(0,0,0,0.24)] outline-none ${
         scrollable ? "max-h-[min(70vh,640px)] overflow-x-hidden overflow-y-auto" : ""
       }`}
       style={{
@@ -372,7 +373,7 @@ function MenuRow({
   const disabled = item.disabled === true;
   const danger = item.type === "item" && item.danger === true;
   const base =
-    "group/menu flex w-full cursor-pointer items-center gap-2 rounded-[3px] px-2 py-[6px] text-left text-sm leading-tight transition-colors";
+    "group/menu flex w-full cursor-pointer items-center gap-2 rounded px-2 py-[7px] text-left text-sm leading-tight font-medium transition-colors";
   const tone = disabled
     ? "cursor-not-allowed text-faint opacity-50"
     : danger
@@ -402,7 +403,7 @@ function MenuRow({
               : "border-muted"
           }`}
         >
-          {item.checked ? "✓" : ""}
+          {item.checked && <CheckIcon size={12} />}
         </span>
         {item.color && (
           <span
@@ -439,15 +440,8 @@ function MenuRow({
             active || (submenuOpen && !disabled ? "bg-accent text-white" : "")
           }`}
         >
-          {item.icon && (
-            <span aria-hidden className="w-4 shrink-0 text-center text-xs">
-              {item.icon}
-            </span>
-          )}
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
-          <span aria-hidden className="shrink-0 text-[10px] opacity-70">
-            ▶
-          </span>
+          <ChevronRightIcon size={16} className="opacity-80" />
         </div>
 
         {submenuOpen &&
@@ -479,17 +473,14 @@ function MenuRow({
       onClick={() => !disabled && onRun()}
       className={`${base} ${tone} ${active}`}
     >
-      {item.icon && (
-        <span aria-hidden className="w-4 shrink-0 text-center text-xs">
-          {item.icon}
-        </span>
-      )}
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {item.hint && (
         <span className="shrink-0 font-mono text-[10px] text-faint group-hover/menu:text-white/70">
           {item.hint}
         </span>
       )}
+      {/* Discord sets a menu's icons at the right edge, after the label. */}
+      {item.icon && <MenuGlyph glyph={item.icon} />}
     </div>
   );
 }

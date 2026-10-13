@@ -5,6 +5,7 @@ import type { APIMessage } from "discord-api-types/v10";
 import { searchMessages, type SearchOutcome } from "@/lib/discord/navApi";
 import { useClient } from "@/lib/store/client";
 import { jumpToMessage } from "./jumpToMessage";
+import { CloseIcon } from "@/components/ui/icons";
 
 export interface SearchPanelProps {
   /** Guild to search in. Defaults to the selected guild. */
@@ -98,7 +99,7 @@ export function SearchPanel({ guildId, channelId, onJump, onClose, className }: 
             aria-label="Close panel"
             className="text-muted hover:text-text"
           >
-            ✕
+            <CloseIcon size={18} />
           </button>
         )}
       </header>

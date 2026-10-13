@@ -218,3 +218,36 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The loading screen's mark: the squircle breathes and its ring ripples out. */
+@keyframes loader-morph {
+  0%,
+  100% {
+    border-radius: 44px;
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    border-radius: 26px;
+    transform: scale(0.94) rotate(-6deg);
+  }
+}
+
+@keyframes loader-ripple {
+  from {
+    opacity: 0.8;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+.loader-mark {
+  border-radius: 44px;
+  animation: loader-morph 1.8s ease-in-out infinite;
+}
+
+.loader-ring {
+  animation: loader-ripple 1.8s ease-out infinite;
+}

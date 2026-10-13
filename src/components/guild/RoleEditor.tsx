@@ -13,6 +13,7 @@ import {
 import { useGuildPowers } from "@/lib/discord/useGuildPowers";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
+import { CloseIcon } from "@/components/ui/icons";
 
 export interface RoleEditorProps {
   guildId: string;
@@ -178,7 +179,7 @@ export function RoleEditor({ guildId, roleId, onClose }: RoleEditorProps) {
               color === 0 ? "ring-2 ring-bright" : ""
             }`}
           >
-            <span aria-hidden>✕</span>
+            <CloseIcon size={20} />
           </button>
           {ROLE_COLORS.map((swatch) => (
             <button

@@ -18,10 +18,10 @@ import {
   memberColorHex,
   memberPermissions,
   memberRoles,
-  roleColorHex,
   snowflakeTimestamp,
 } from "@/lib/discord/roles";
 import { ActivityCard } from "@/components/members/ActivityCard";
+import { MemberRolePills } from "@/components/guild/MemberRoles";
 import { BadgeRow } from "@/components/members/BadgeRow";
 import { BotTag } from "@/components/ui/BotTag";
 import {
@@ -31,6 +31,7 @@ import {
   type UserBadge,
 } from "@/lib/discord/userFlags";
 import { OFFLINE_PRESENCE, useClient } from "@/lib/store/client";
+import { CloseIcon } from "@/components/ui/icons";
 
 export interface UserCardProps {
   guildId: string;
@@ -220,7 +221,7 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
           aria-label="Close card"
           className="absolute top-2 right-2 grid h-6 w-6 place-items-center rounded-full bg-black/40 text-sm text-white transition-colors hover:bg-black/70"
         >
-          <span aria-hidden>✕</span>
+          <CloseIcon size={18} />
         </button>
       </div>
 
@@ -334,29 +335,11 @@ export function UserCard({ guildId, userId, onClose, className }: UserCardProps)
             </Section>
           )}
 
-          <Section title={`Roles — ${roles.length}`}>
-            {roles.length === 0 ? (
-              <p className="text-xs text-muted">This member has no roles.</p>
-            ) : (
-              <ul className="flex flex-wrap gap-1.5">
-                {roles.map((role) => {
-                  const color = roleColorHex(role.color);
-                  return (
-                    <li
-                      key={role.id}
-                      className="flex items-center gap-1.5 rounded bg-panel px-2 py-0.5 text-[11px] text-text"
-                    >
-                      <span
-                        aria-hidden
-                        className="h-2.5 w-2.5 rounded-full bg-muted"
-                        style={color ? { backgroundColor: color } : undefined}
-                      />
-                      <span className="max-w-32 truncate">{role.name}</span>
-                    </li>
-                  );
-                })}
-              </ul>
+          <Section title={roles.length === 1 ? "Role" : "Roles"}>
+            {roles.length === 0 && (
+              <p className="mb-1.5 text-xs text-muted">This member has no roles.</p>
             )}
+            <MemberRolePills guildId={guildId} userId={userId} />
           </Section>
 
           {(isOwner || notable.length > 0) && (

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { APIAttachment } from "discord-api-types/v10";
 import { Lightbox } from "./Lightbox";
+import { DownloadIcon } from "@/components/ui/icons";
 
 export interface AttachmentsProps {
   attachments: APIAttachment[];
@@ -34,6 +35,60 @@ export function Attachments({ attachments }: AttachmentsProps) {
   );
 }
 
+/**
+ * An image the way Discord shows it: a shimmering placeholder at the image's
+ * size until it arrives, and a spoiler blurred behind a pill until clicked.
+ */
+function ImageAttachment({
+  attachment,
+  hidden,
+  onReveal,
+  onPreview,
+}: {
+  attachment: APIAttachment;
+  hidden: boolean;
+  onReveal: () => void;
+  onPreview: () => void;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  const ratio =
+    attachment.width && attachment.height ? `${attachment.width} / ${attachment.height}` : undefined;
+
+  return (
+    <button
+      type="button"
+      onClick={hidden ? onReveal : onPreview}
+      className={`relative block w-fit max-w-[min(100%,550px)] overflow-hidden rounded-lg ${
+        hidden ? "cursor-pointer" : "cursor-zoom-in"
+      } ${loaded ? "" : "skeleton"}`}
+      style={loaded ? undefined : { aspectRatio: ratio, minWidth: 120, minHeight: 80 }}
+      aria-label={
+        hidden ? `Reveal spoiler ${attachment.filename}` : `Open ${attachment.filename} full size`
+      }
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={attachment.url}
+        alt={attachment.description ?? attachment.filename}
+        width={attachment.width ?? undefined}
+        height={attachment.height ?? undefined}
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        className={`max-h-[350px] w-auto max-w-full object-contain transition-[filter,opacity] duration-200 ${
+          loaded ? "opacity-100" : "opacity-0"
+        } ${hidden ? "scale-110 blur-2xl brightness-75" : ""}`}
+      />
+      {hidden && (
+        <span className="absolute inset-0 grid place-items-center">
+          <span className="rounded-full bg-black/70 px-3 py-1.5 text-xs font-bold tracking-wide text-white uppercase">
+            Spoiler
+          </span>
+        </span>
+      )}
+    </button>
+  );
+}
+
 function AttachmentItem({
   attachment,
   onPreview,
@@ -46,35 +101,25 @@ function AttachmentItem({
   const [revealed, setRevealed] = useState(!spoiler);
   const kind = attachmentKind(attachment);
 
+  if (kind === "image") {
+    return (
+      <ImageAttachment
+        attachment={attachment}
+        hidden={!revealed}
+        onReveal={() => setRevealed(true)}
+        onPreview={onPreview}
+      />
+    );
+  }
+
   if (!revealed) {
     return (
       <button
         type="button"
         onClick={() => setRevealed(true)}
-        className="w-fit rounded border border-line bg-raised px-3 py-2 text-xs text-muted hover:bg-panel"
+        className="w-fit rounded-md bg-raised px-3 py-2 text-xs font-bold tracking-wide text-bright uppercase hover:bg-hover"
       >
-        Spoiler – click to reveal ({attachment.filename.replace(/^SPOILER_/, "")})
-      </button>
-    );
-  }
-
-  if (kind === "image") {
-    return (
-      <button
-        type="button"
-        onClick={onPreview}
-        className="block w-fit max-w-md cursor-zoom-in overflow-hidden rounded"
-        aria-label={`Open ${attachment.filename} full size`}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={attachment.url}
-          alt={attachment.description ?? attachment.filename}
-          width={attachment.width ?? undefined}
-          height={attachment.height ?? undefined}
-          loading="lazy"
-          className="max-h-80 w-auto max-w-full object-contain"
-        />
+        Spoiler · {attachment.filename.replace(/^SPOILER_/, "")}
       </button>
     );
   }
@@ -111,8 +156,8 @@ function AttachmentItem({
       download={attachment.filename}
       className="flex w-fit max-w-md items-center gap-3 rounded border border-line bg-panel px-3 py-2 hover:border-accent"
     >
-      <span aria-hidden className="text-lg text-muted">
-        ⬇
+      <span className="text-muted">
+        <DownloadIcon size={22} />
       </span>
       <span className="min-w-0">
         <span className="block truncate text-sm text-accent">{attachment.filename}</span>

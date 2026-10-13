@@ -12,6 +12,7 @@ import {
 import { useApplicationId } from "@/lib/commands/useApplicationId";
 import { commandApi } from "@/lib/discord/commandApi";
 import { useClient } from "@/lib/store/client";
+import { SkeletonRows } from "@/components/ui/Skeleton";
 
 export interface CommandListProps {
   /** Guild whose local commands are listed. Defaults to the selected guild. */
@@ -230,7 +231,7 @@ export function CommandList({ guildId, className }: CommandListProps) {
           {current.error}
         </p>
       )}
-      {loading && <p className="mb-2 text-xs text-muted">Loading commands…</p>}
+      {loading && <SkeletonRows rows={4} className="mb-2" />}
 
       {renderSection(
         "Global commands",

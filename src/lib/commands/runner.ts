@@ -33,6 +33,8 @@ const EPHEMERAL = 1 << 6;
 
 /** What the person using the command sees when the script itself broke. */
 const FAILURE_REPLY = "⚠️ Something went wrong while running this command.";
+/** Sent when a script ran fine but never answered, so the command is never left hanging. */
+const NO_REPLY_FALLBACK = "✅ Done.";
 
 type Payload = APIInteractionResponseCallbackData;
 
@@ -380,8 +382,10 @@ export async function runCommandScript({
       if (responder.state !== "replied" && isReplyable(result.value)) {
         await responder.reply(toPayload(result.value));
       } else if (responder.state === "none") {
-        system("The script finished without replying, so Discord will show “The application did not respond”.");
-        if (!test) patchInteraction(interaction.id, "failed", "Its command script finished without replying.");
+        // Never leave the person with "The application did not respond".
+        system("The script finished without replying; sent a short private confirmation instead.");
+        await responder.reply({ content: NO_REPLY_FALLBACK, flags: EPHEMERAL });
+        if (!test) patchInteraction(interaction.id, "answered", "Its command script finished without replying; a fallback was sent.");
       } else if (responder.state === "deferred" && responder.autoDeferred) {
         // Nobody is going to fill in the "thinking…" placeholder; take it away.
         await responder.deleteReply();

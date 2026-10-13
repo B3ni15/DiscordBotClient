@@ -8,6 +8,7 @@ import { roleColorHex, sortRolesByPosition } from "@/lib/discord/roles";
 import { REASONS, useGuildPowers } from "@/lib/discord/useGuildPowers";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
+import { CheckIcon } from "@/components/ui/icons";
 
 export interface RoleToggleListProps {
   guildId: string;
@@ -150,7 +151,7 @@ export function RoleToggleList({ guildId, userId, compact = false }: RoleToggleL
                       : "border-muted"
                   }`}
                 >
-                  {pending === role.id ? "…" : checked ? "✓" : ""}
+                  {pending === role.id ? "…" : checked ? <CheckIcon size={12} /> : null}
                 </span>
                 <span
                   aria-hidden

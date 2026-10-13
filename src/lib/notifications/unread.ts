@@ -29,6 +29,7 @@ import { useClient } from "@/lib/store/client";
 import { subscribeDispatch } from "./dispatch";
 import { getLastRead, isNewer, markRead, subscribeReadState } from "./readState";
 import { getSettings, subscribeSettings } from "./settings";
+import { dmReadPacer } from "@/lib/discord/dmPacer";
 
 /** Channel types with a message history of their own. */
 const MESSAGE_CHANNELS = new Set<number>([
@@ -265,7 +266,9 @@ async function catchUpDMs(session: number) {
       continue;
     }
     try {
-      const channel = (await api.channel(rest, dm.channelId)) as APIChannel & { last_message_id?: string | null };
+      const channel = (await dmReadPacer.run(rest, () => api.channel(rest, dm.channelId))) as APIChannel & {
+        last_message_id?: string | null;
+      };
       if (session !== generation) return;
       if (channel.last_message_id) baseline[dm.channelId] = channel.last_message_id;
     } catch {

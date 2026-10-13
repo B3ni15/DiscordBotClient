@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChannelType, PermissionFlagsBits } from "discord-api-types/v10";
 import type { APIChannel } from "discord-api-types/v10";
+import { ForwardDialog } from "@/components/actions/ForwardDialog";
 import { ChannelEditor } from "@/components/guild/ChannelEditor";
 import { ChannelPermissions } from "@/components/guild/ChannelPermissions";
 import {
@@ -81,7 +82,77 @@ export function GuildDialogs() {
           onClose={close}
         />
       );
+    case "forward":
+      return <ForwardDialog message={dialog.message} guildId={dialog.guildId} onClose={close} />;
+    case "leaveGuild":
+      return <LeaveGuildDialog guildId={dialog.guildId} onClose={close} />;
   }
+}
+
+/** Discord's "Leave server" confirmation, worded for a bot that cannot rejoin by itself. */
+function LeaveGuildDialog({ guildId, onClose }: { guildId: string; onClose: () => void }) {
+  const guild = useClient((state) => state.guilds[guildId]);
+  const selfId = useClient((state) => state.user?.id);
+  const getRest = useClient((state) => state.getRest);
+  const removeGuild = useClient((state) => state.removeGuild);
+  const toast = useUI((state) => state.toast);
+
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const name = guild?.name ?? "this server";
+  // Discord refuses outright: an owner has to transfer or delete the server.
+  const isOwner = guild !== undefined && guild.owner_id === selfId;
+
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      await guildApi.leaveGuild(getRest(), guildId);
+      // GUILD_DELETE follows over the gateway; dropping it now keeps the rail
+      // from showing a server the bot has already left.
+      removeGuild(guildId);
+      toast(`Left ${name}.`);
+      onClose();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Discord refused to let the bot leave.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Leave '${name}'`}
+      onClose={onClose}
+      footer={
+        <ModalActions
+          onCancel={onClose}
+          onConfirm={() => void confirm()}
+          confirmLabel="Leave Server"
+          busy={busy}
+          disabled={isOwner}
+          danger
+        />
+      }
+    >
+      {isOwner ? (
+        <p className="text-sm leading-relaxed text-text">
+          The bot owns <span className="font-semibold text-bright">{name}</span>. An owner cannot
+          leave; transfer the ownership or delete the server first.
+        </p>
+      ) : (
+        <p className="text-sm leading-relaxed text-text">
+          Are you sure you want to leave <span className="font-semibold text-bright">{name}</span>?
+          The bot won&rsquo;t be able to rejoin unless someone invites it again.
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-danger">
+          {error}
+        </p>
+      )}
+    </Modal>
+  );
 }
 
 function DeleteChannelDialog({

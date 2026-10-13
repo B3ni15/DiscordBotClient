@@ -3,6 +3,7 @@
 import { PermissionFlagsBits } from "discord-api-types/v10";
 import type { APIChannel, APIGuildMember } from "discord-api-types/v10";
 import { channelMenuItems, memberMenuItems } from "@/components/context/menus";
+import { SpeakerIcon, StageIcon } from "@/components/ui/icons";
 import { DeafIcon, DisconnectIcon, MicIcon, MicOffIcon, VideoIcon } from "@/components/voice/icons";
 import { useGuildPowers } from "@/lib/discord/useGuildPowers";
 import { userAvatarUrl } from "@/lib/discord/cdn";
@@ -87,11 +88,8 @@ export function VoiceChannelRow({ channel, guildId }: VoiceChannelRowProps) {
             active ? "bg-raised font-medium text-bright" : "text-muted hover:bg-hover hover:text-text"
           } ${connected ? "text-bright" : ""}`}
         >
-          <span
-            aria-hidden
-            className={`shrink-0 text-base leading-none ${connected ? "text-online" : "text-faint"}`}
-          >
-            {isStage ? "📡" : "🔊"}
+          <span className={connected ? "text-online" : "text-faint"}>
+            {isStage ? <StageIcon size={20} /> : <SpeakerIcon size={20} />}
           </span>
           <span className="truncate">{name}</span>
           {limit > 0 && (

@@ -6,6 +6,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useAccount } from "@/lib/store/account";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
+import { KeyIcon, LinkIcon } from "@/components/ui/icons";
 
 const REPO_URL = "https://github.com/B3ni15/DiscordBotClient";
 
@@ -74,7 +75,7 @@ export function TokenGate() {
             }
             className="mt-6 flex w-full items-center justify-center gap-2 rounded-[3px] bg-panel-alt px-3 py-2.5 text-sm font-medium text-bright transition-colors hover:bg-raised"
           >
-            <span aria-hidden>🔑</span>
+            <KeyIcon size={16} />
             {accountStatus === "locked" ? "Unlock your saved bots" : "Turn on sync"}
           </button>
         )}
@@ -123,7 +124,7 @@ export function TokenGate() {
               href="/api/auth/discord"
               className="flex w-full items-center justify-center gap-2 rounded-[3px] bg-panel-alt px-3 py-2.5 text-sm font-medium text-bright transition-colors hover:bg-raised"
             >
-              <span aria-hidden>🔗</span>
+              <LinkIcon size={16} />
               Sign in with Discord
             </a>
             <p className="mt-2 text-center text-xs text-muted">

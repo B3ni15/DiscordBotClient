@@ -9,6 +9,7 @@ import {
   type AutoArchiveDuration,
 } from "@/lib/discord/threadApi";
 import { useClient } from "@/lib/store/client";
+import { CloseIcon } from "@/components/ui/icons";
 
 export interface ThreadCreateProps {
   /** Parent channel the thread is started in. */
@@ -85,7 +86,7 @@ export function ThreadCreate({ channelId, messageId, onCreated, onClose }: Threa
           aria-label="Close form"
           className="text-muted hover:text-text"
         >
-          ✕
+          <CloseIcon size={18} />
         </button>
       </div>
 

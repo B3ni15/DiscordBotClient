@@ -7,7 +7,17 @@ import {
   copyMessageLink,
   togglePin,
 } from "@/lib/discord/messageActions";
+import {
+  ForwardIcon,
+  LinkIcon,
+  PencilIcon,
+  PinStrokeIcon,
+  ReplyIcon,
+  SmileStrokeIcon,
+  TrashStrokeIcon,
+} from "@/components/ui/icons";
 import { useClient } from "@/lib/store/client";
+import { useUI } from "@/lib/store/ui";
 import { DeleteConfirm } from "./DeleteConfirm";
 import { EmojiPicker, type PickedEmoji } from "./EmojiPicker";
 
@@ -26,7 +36,7 @@ export interface MessageToolbarProps {
 interface ActionDef {
   key: string;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   danger?: boolean;
   onRun: () => void;
 }
@@ -94,30 +104,38 @@ export function MessageToolbar({
     }
   }
 
+  const openDialog = useUI((state) => state.openDialog);
+
   const actions: ActionDef[] = [
     {
       key: "react",
-      label: "Add reaction",
-      icon: "☺",
+      label: "Add Reaction",
+      icon: <SmileStrokeIcon size={20} />,
       onRun: () => setPickerOpen((open) => !open),
     },
-    { key: "reply", label: "Reply", icon: "↩", onRun: () => onReply(message) },
     ...(isOwn
-      ? [{ key: "edit", label: "Edit", icon: "✎", onRun: () => onEdit(message) }]
+      ? [{ key: "edit", label: "Edit", icon: <PencilIcon size={18} />, onRun: () => onEdit(message) }]
       : []),
+    { key: "reply", label: "Reply", icon: <ReplyIcon size={20} />, onRun: () => onReply(message) },
+    {
+      key: "forward",
+      label: "Forward",
+      icon: <ForwardIcon size={20} />,
+      onRun: () => openDialog({ kind: "forward", message, guildId }),
+    },
     {
       key: "pin",
-      label: pinned ? "Unpin message" : "Pin message",
-      icon: "📌",
+      label: pinned ? "Unpin Message" : "Pin Message",
+      icon: <PinStrokeIcon size={18} />,
       onRun: () => void handleTogglePin(),
     },
-    { key: "link", label: "Copy link", icon: "🔗", onRun: () => void handleCopyLink() },
+    { key: "link", label: "Copy Message Link", icon: <LinkIcon size={18} />, onRun: () => void handleCopyLink() },
     ...(isOwn
       ? [
           {
             key: "delete",
-            label: "Delete",
-            icon: "🗑",
+            label: "Delete Message",
+            icon: <TrashStrokeIcon size={18} />,
             danger: true,
             onRun: () => setConfirmOpen(true),
           },
@@ -148,7 +166,7 @@ export function MessageToolbar({
         role="toolbar"
         aria-label="Message actions"
         onKeyDown={handleKeyDown}
-        className={`inline-flex items-center gap-0.5 rounded-md border border-line bg-panel p-0.5 shadow-lg transition-opacity ${
+        className={`inline-flex items-center rounded-lg border border-black/20 bg-chat p-0.5 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_4px_8px_rgba(0,0,0,0.2)] transition-opacity ${
           pickerOpen || confirmOpen
             ? "opacity-100"
             : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"
@@ -166,13 +184,13 @@ export function MessageToolbar({
             aria-expanded={action.key === "react" ? pickerOpen : undefined}
             onFocus={() => setFocusIndex(index)}
             onClick={action.onRun}
-            className={`flex h-7 w-7 items-center justify-center rounded text-xs leading-none ${
+            className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${
               action.danger
                 ? "text-danger hover:bg-danger/15"
                 : "text-muted hover:bg-hover hover:text-bright"
             }`}
           >
-            <span aria-hidden>{action.icon}</span>
+            {action.icon}
           </button>
         ))}
       </div>

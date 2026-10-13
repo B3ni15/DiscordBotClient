@@ -1,9 +1,17 @@
 "use client";
 
-import { MessageType, type APIMessage } from "discord-api-types/v10";
+import {
+  MessageReferenceType,
+  MessageType,
+  type APIMessage,
+  type APIMessageSnapshotFields,
+} from "discord-api-types/v10";
+import { ChartIcon, ForwardIcon, ReplyIcon } from "@/components/ui/icons";
+import { jumpToMessage } from "@/components/nav/jumpToMessage";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { Markdown } from "@/lib/markdown";
 import { useClient } from "@/lib/store/client";
+import { useUI } from "@/lib/store/ui";
 import { Attachments } from "./Attachments";
 import { contentIsOnlyEmbedLinks } from "./embedMedia";
 import { EmbedCard } from "./EmbedCard";
@@ -41,8 +49,16 @@ export function MessageContent({ message }: MessageContentProps) {
 
   return (
     <div className="min-w-0">
-      {message.message_reference && (
-        <ReplyPreview message={message} guildId={guildId} />
+      {message.message_reference?.type === MessageReferenceType.Forward ? (
+        message.message_snapshots?.[0] && (
+          <ForwardedMessage
+            snapshot={message.message_snapshots[0].message}
+            reference={message.message_reference}
+            guildId={guildId}
+          />
+        )
+      ) : (
+        message.message_reference && <ReplyPreview message={message} guildId={guildId} />
       )}
 
       {message.content && !linkOnly ? (
@@ -67,6 +83,89 @@ export function MessageContent({ message }: MessageContentProps) {
   );
 }
 
+/**
+ * A forwarded message: Discord's grey bar with "Forwarded" above a copy of the
+ * original, and a footer naming where it came from.
+ */
+function ForwardedMessage({
+  snapshot,
+  reference,
+  guildId,
+}: {
+  snapshot: APIMessageSnapshotFields;
+  reference: NonNullable<APIMessage["message_reference"]>;
+  guildId: string | null;
+}) {
+  const origin = useClient((state) =>
+    reference.channel_id ? state.channelsById[reference.channel_id] : undefined,
+  );
+  const selectChannel = useClient((state) => state.selectChannel);
+  const originName = origin && "name" in origin && origin.name ? `#${origin.name}` : null;
+  const sentAt = snapshot.timestamp ? new Date(snapshot.timestamp) : null;
+
+  async function openOrigin() {
+    if (!reference.channel_id || !reference.message_id) return;
+    // The original may sit in another server, whose channel list has to come along.
+    const originGuild = origin && "guild_id" in origin ? origin.guild_id : undefined;
+    if (originGuild && useClient.getState().selectedGuildId !== originGuild) {
+      useUI.getState().setDmMode(false);
+      useClient.setState({ selectedGuildId: originGuild });
+    }
+    await selectChannel(reference.channel_id);
+    // The history may still be loading; one frame later the row is usually there.
+    requestAnimationFrame(() => jumpToMessage(reference.message_id!));
+  }
+
+  return (
+    <div className="mt-0.5 flex max-w-[640px] gap-3">
+      <span aria-hidden className="w-1 shrink-0 rounded-full bg-line" />
+      <div className="min-w-0 flex-1 py-0.5">
+        <p className="mb-0.5 flex items-center gap-1 text-[13px] font-medium text-muted italic">
+          <ForwardIcon size={14} />
+          Forwarded
+        </p>
+        {snapshot.content && (
+          <Markdown
+            content={snapshot.content}
+            guildId={guildId}
+            className="text-sm leading-relaxed break-words"
+          />
+        )}
+        {snapshot.attachments?.length > 0 && <Attachments attachments={snapshot.attachments} />}
+        {snapshot.embeds?.map((embed, index) => (
+          <EmbedCard key={index} embed={embed} guildId={guildId} />
+        ))}
+        <p className="mt-1 flex items-center gap-1 text-xs text-muted">
+          {origin ? (
+            <button
+              type="button"
+              onClick={() => void openOrigin()}
+              className="font-medium hover:text-text hover:underline"
+            >
+              {originName ?? "Original message"}
+            </button>
+          ) : (
+            <span>From another server</span>
+          )}
+          {sentAt && (
+            <>
+              <span aria-hidden>•</span>
+              <time dateTime={snapshot.timestamp} suppressHydrationWarning>
+                {sentAt.toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </time>
+            </>
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /** Messages from REST carry no guild_id, so the channel cache fills it in. */
 function useMessageGuildId(message: APIMessage): string | null {
   // The gateway adds guild_id; the type does not declare it.
@@ -84,7 +183,7 @@ function ReplyPreview({ message, guildId }: { message: APIMessage; guildId: stri
   if (!referenced) {
     return (
       <p className="mb-0.5 flex items-center gap-1 text-xs text-muted">
-        <span aria-hidden>↰</span>
+        <ReplyIcon size={14} />
         Original message is unavailable.
       </p>
     );
@@ -96,7 +195,7 @@ function ReplyPreview({ message, guildId }: { message: APIMessage; guildId: stri
 
   return (
     <div className="mb-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted">
-      <span aria-hidden>↰</span>
+      <ReplyIcon size={14} />
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={userAvatarUrl(referenced.author, 32)} alt="" className="h-4 w-4 rounded-full" />
       <span className="shrink-0 font-medium text-text/80">{name}</span>
@@ -104,7 +203,7 @@ function ReplyPreview({ message, guildId }: { message: APIMessage; guildId: stri
         {preview ? (
           <Markdown content={preview} guildId={guildId} inline />
         ) : referenced.poll ? (
-          <span className="italic">📊 {referenced.poll.question.text ?? "Poll"}</span>
+          <span className="inline-flex items-center gap-1 italic"><ChartIcon size={12} /> {referenced.poll.question.text ?? "Poll"}</span>
         ) : (
           <span className="italic">attachment or embed</span>
         )}
