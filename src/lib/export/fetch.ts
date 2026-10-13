@@ -7,6 +7,7 @@ import type {
   APIThreadList,
 } from "discord-api-types/v10";
 import { RequestPacer, type PacerState } from "@/lib/discord/dmPacer";
+import type { GatewayClient } from "@/lib/discord/gateway";
 import { DISCORD_EPOCH } from "@/lib/discord/roles";
 import type { RestClient } from "@/lib/discord/rest";
 
@@ -187,39 +188,116 @@ export async function fetchThreads(
 }
 
 /**
- * At most this many authors are looked up one by one. Everyone who left the
- * server answers 404, and Discord counts every 4xx towards a limit that ends
- * in a temporary ban, so a huge history does not get one request per author.
+ * At most this many authors are looked up. The gateway answers 100 per
+ * request, and Discord may rate limit those requests per server.
  */
-export const MAX_MEMBER_LOOKUPS = 250;
+export const MAX_MEMBER_LOOKUPS = 300;
+const MEMBER_BATCH = 100;
+/** How long a batch may take before the export moves on without it. */
+const MEMBER_TIMEOUT_MS = 15_000;
 
 /**
  * Members behind the authors of an export, for nicknames and role colours.
- * The gateway rarely has them all, so the missing ones are asked for one by
- * one, busiest authors first; someone who left the server, or anyone past the
- * cap, simply keeps their account name.
+ *
+ * Asked over the gateway, 100 at a time, rather than with one REST request
+ * per author: everyone who has left the server would answer 404 there, and
+ * Discord counts every 4xx towards a limit that ends in a temporary ban. The
+ * gateway lists them as `not_found` instead. Busiest authors go first; anyone
+ * past the cap, or not found, keeps their account name.
  */
 export async function fetchMissingMembers(
-  throttle: Throttle,
+  gateway: GatewayClient | null,
   guildId: string,
   userIds: string[],
   known: Map<string, APIGuildMember | null>,
-  onProgress?: (done: number) => void,
+  options: {
+    signal?: AbortSignal;
+    onProgress?: (done: number) => void;
+    onWait?: (ms: number) => void;
+  } = {},
 ): Promise<void> {
-  let done = 0;
-  for (const userId of userIds.slice(0, MAX_MEMBER_LOOKUPS)) {
-    if (known.has(userId)) continue;
-    throttle.signal?.throwIfAborted();
-    try {
-      known.set(
-        userId,
-        await get<APIGuildMember>(throttle, `/guilds/${guildId}/members/${userId}`),
-      );
-    } catch (cause) {
-      if (throttle.signal?.aborted) throw cause;
-      known.set(userId, null);
-    }
-    done += 1;
-    onProgress?.(done);
+  // Without a live gateway the export goes on with account names only.
+  if (!gateway || gateway.status !== "ready") return;
+  const wanted = userIds.filter((id) => !known.has(id)).slice(0, MAX_MEMBER_LOOKUPS);
+
+  for (let start = 0; start < wanted.length; start += MEMBER_BATCH) {
+    options.signal?.throwIfAborted();
+    const batch = wanted.slice(start, start + MEMBER_BATCH);
+    const members = await requestMembers(gateway, guildId, batch, options);
+    for (const member of members) if (member.user) known.set(member.user.id, member);
+    for (const id of batch) if (!known.has(id)) known.set(id, null);
+    options.onProgress?.(start + batch.length);
   }
+}
+
+interface MembersChunk {
+  nonce?: string;
+  members: APIGuildMember[];
+  chunk_index: number;
+  chunk_count: number;
+}
+
+interface RateLimited {
+  opcode: number;
+  retry_after: number;
+  meta?: { guild_id?: string; nonce?: string };
+}
+
+/** One gateway member request, retried when Discord says it came too soon. */
+function requestMembers(
+  gateway: GatewayClient,
+  guildId: string,
+  userIds: string[],
+  options: { signal?: AbortSignal; onWait?: (ms: number) => void },
+): Promise<APIGuildMember[]> {
+  return new Promise((resolve, reject) => {
+    const nonce = Math.random().toString(36).slice(2, 18);
+    const members: APIGuildMember[] = [];
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      unsubscribe();
+      clearTimeout(timeout);
+      clearTimeout(retry);
+      options.signal?.removeEventListener("abort", onAbort);
+    };
+    // A lost answer is not worth failing the export over.
+    const finish = () => {
+      cleanup();
+      resolve(members);
+    };
+    const send = () => {
+      gateway.requestGuildMembers(guildId, { userIds, nonce });
+      clearTimeout(timeout);
+      timeout = setTimeout(finish, MEMBER_TIMEOUT_MS);
+    };
+    function onAbort() {
+      cleanup();
+      reject(options.signal!.reason);
+    }
+
+    const unsubscribe = gateway.on("dispatch", (event, data) => {
+      if (event === "GUILD_MEMBERS_CHUNK") {
+        const chunk = data as MembersChunk;
+        if (chunk.nonce !== nonce) return;
+        members.push(...chunk.members);
+        if (chunk.chunk_index + 1 >= chunk.chunk_count) finish();
+      } else if (event === "RATE_LIMITED") {
+        const limited = data as RateLimited;
+        if (limited.meta?.nonce !== nonce) return;
+        const ms = Math.ceil(limited.retry_after * 1000);
+        options.onWait?.(ms);
+        clearTimeout(timeout);
+        retry = setTimeout(send, ms);
+      }
+    });
+
+    if (options.signal?.aborted) {
+      onAbort();
+      return;
+    }
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    send();
+  });
 }

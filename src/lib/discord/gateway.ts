@@ -193,18 +193,32 @@ export class GatewayClient {
     return this.#mobile;
   }
 
-  /** Ask for the member list of a guild; answers arrive as GUILD_MEMBERS_CHUNK. */
+  /**
+   * Ask for members of a guild; answers arrive as GUILD_MEMBERS_CHUNK. With
+   * `userIds` (at most 100) only those are looked up, which needs no
+   * privileged intent, and ids that are not members come back in `not_found`
+   * instead of as a 404 apiece. `nonce` is echoed on every chunk.
+   */
   requestGuildMembers(
     guildId: string,
-    options: { query?: string; limit?: number; presences?: boolean } = {},
+    options: {
+      query?: string;
+      limit?: number;
+      presences?: boolean;
+      userIds?: string[];
+      nonce?: string;
+    } = {},
   ) {
+    const selector = options.userIds
+      ? { user_ids: options.userIds }
+      : { query: options.query ?? "", limit: options.limit ?? 0 };
     this.#send({
       op: GatewayOpcode.RequestGuildMembers,
       d: {
         guild_id: guildId,
-        query: options.query ?? "",
-        limit: options.limit ?? 0,
+        ...selector,
         presences: options.presences ?? false,
+        nonce: options.nonce,
       },
     });
   }
