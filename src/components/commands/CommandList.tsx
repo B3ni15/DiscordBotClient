@@ -12,6 +12,7 @@ import {
 import { useApplicationId } from "@/lib/commands/useApplicationId";
 import { commandApi } from "@/lib/discord/commandApi";
 import { useClient } from "@/lib/store/client";
+import { PencilIcon, PlusIcon, SlashIcon, TrashStrokeIcon } from "@/components/ui/icons";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 
 export interface CommandListProps {
@@ -109,61 +110,60 @@ export function CommandList({ guildId, className }: CommandListProps) {
     const script = botId
       ? scripts.find((entry) => entry.botId === botId && entry.name === command.name)
       : undefined;
+    const confirming = confirmingId === command.id;
     return (
-      <li
-        key={command.id}
-        className={`rounded border px-3 py-2 ${
-          isEditing ? "border-accent/60 bg-raised" : "border-line bg-raised/40"
-        }`}
-      >
-        <div className="flex items-baseline gap-2">
-          <span className="truncate font-mono text-sm text-text">/{command.name}</span>
-          {script && (
-            <span
-              title={script.enabled ? "Answered by its script" : "Has a script, currently turned off"}
-              className={`shrink-0 rounded px-1 font-mono text-[10px] ${
-                script.enabled ? "bg-online/15 text-online" : "bg-raised text-muted"
-              }`}
-            >
-              JS
-            </span>
-          )}
-          <span className="ml-auto shrink-0 font-mono text-[10px] text-muted">
-            {optionCount} {optionCount === 1 ? "option" : "options"}
+      <li key={command.id}>
+        <div
+          className={`group/cmd relative flex items-start gap-3 rounded-lg border px-3 py-3 transition-colors ${
+            isEditing
+              ? "border-accent/70 bg-accent/10"
+              : "border-transparent bg-panel hover:border-line hover:bg-hover"
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => startEdit(command, scope)}
+            aria-label={`Edit /${command.name}`}
+            className="absolute inset-0 rounded-lg"
+          />
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-raised text-muted">
+            <SlashIcon size={18} />
           </span>
-        </div>
-        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted">
-          {command.description || "(no description)"}
-        </p>
-        <p className="mt-1 truncate font-mono text-[10px] text-muted">{command.id}</p>
-
-        {confirmingId === command.id ? (
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-[11px] text-danger">Delete this command?</span>
-            <button
-              type="button"
-              onClick={() => void remove(command, scope)}
-              disabled={busyId === command.id}
-              className="ml-auto rounded bg-danger/20 px-2 py-1 text-[11px] font-medium text-danger hover:bg-danger/30 disabled:opacity-60"
-            >
-              {busyId === command.id ? "Deleting…" : "Delete"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmingId(null)}
-              className="rounded border border-line px-2 py-1 text-[11px] hover:bg-panel"
-            >
-              Cancel
-            </button>
+          <div className="pointer-events-none min-w-0 flex-1">
+            <p className="flex items-center gap-2">
+              <span className="truncate font-mono text-[15px] font-semibold text-bright">
+                /{command.name}
+              </span>
+              {script ? (
+                <span
+                  className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                    script.enabled ? "bg-online/15 text-online" : "bg-raised text-muted"
+                  }`}
+                >
+                  {script.enabled ? "Live" : "Off"}
+                </span>
+              ) : (
+                <span className="shrink-0 rounded bg-amber/15 px-1.5 py-0.5 text-[10px] font-bold text-amber uppercase">
+                  No handler
+                </span>
+              )}
+            </p>
+            <p className="mt-0.5 line-clamp-2 text-sm text-muted">
+              {command.description || "(no description)"}
+            </p>
+            <p className="mt-1.5 text-[11px] text-faint">
+              {optionCount} {optionCount === 1 ? "option" : "options"}
+            </p>
           </div>
-        ) : (
-          <div className="mt-2 flex items-center gap-2">
+          <div className="relative flex shrink-0 gap-1 opacity-0 transition-opacity group-hover/cmd:opacity-100 focus-within:opacity-100">
             <button
               type="button"
               onClick={() => startEdit(command, scope)}
-              className="rounded border border-line px-2 py-1 text-[11px] hover:bg-panel"
+              aria-label={`Edit /${command.name}`}
+              title="Edit"
+              className="grid h-8 w-8 place-items-center rounded-md text-muted transition-colors hover:bg-raised hover:text-bright"
             >
-              Edit
+              <PencilIcon size={15} />
             </button>
             <button
               type="button"
@@ -171,9 +171,32 @@ export function CommandList({ guildId, className }: CommandListProps) {
                 setActionError(null);
                 setConfirmingId(command.id);
               }}
-              className="rounded border border-line px-2 py-1 text-[11px] text-danger hover:bg-danger/10"
+              aria-label={`Delete /${command.name}`}
+              title="Delete"
+              className="grid h-8 w-8 place-items-center rounded-md text-danger transition-colors hover:bg-danger/15"
             >
-              Delete
+              <TrashStrokeIcon size={15} />
+            </button>
+          </div>
+        </div>
+
+        {confirming && (
+          <div className="mt-1 flex animate-fade-in items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2">
+            <span className="flex-1 text-sm text-danger">Delete /{command.name} from Discord?</span>
+            <button
+              type="button"
+              onClick={() => setConfirmingId(null)}
+              className="rounded px-3 py-1 text-sm text-text hover:underline"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void remove(command, scope)}
+              disabled={busyId === command.id}
+              className="rounded bg-danger px-3 py-1 text-sm font-medium text-white hover:brightness-90 disabled:opacity-60"
+            >
+              {busyId === command.id ? "Deleting…" : "Delete"}
             </button>
           </div>
         )}
@@ -188,20 +211,30 @@ export function CommandList({ guildId, className }: CommandListProps) {
     scope: string | null,
   ) {
     return (
-      <section className="mb-5">
-        <div className="flex items-baseline gap-2 pb-1">
-          <h3 className="text-xs font-semibold text-muted">{title}</h3>
+      <section className="mb-8">
+        <div className="flex items-center gap-2 pb-1">
+          <h3 className="text-xs font-bold tracking-wide text-muted uppercase">
+            {title} — {commands.length}
+          </h3>
           <button
             type="button"
             onClick={() => startCreate(scope)}
-            className="ml-auto rounded bg-accent/15 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/25"
+            className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15"
           >
-            + New
+            <PlusIcon size={12} />
+            New
           </button>
         </div>
-        <p className="pb-2 text-[11px] leading-relaxed text-muted">{hint}</p>
+        <p className="pb-3 text-xs leading-relaxed text-faint">{hint}</p>
         {commands.length === 0 ? (
-          <p className="text-xs text-muted">No commands in this scope.</p>
+          <button
+            type="button"
+            onClick={() => startCreate(scope)}
+            className="flex w-full flex-col items-center gap-1 rounded-lg border border-dashed border-line px-4 py-6 text-center transition-colors hover:border-muted hover:bg-panel"
+          >
+            <span className="text-sm font-medium text-text">No commands here yet</span>
+            <span className="text-xs text-muted">Create one — it answers as soon as it is saved.</span>
+          </button>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {commands.map((command) => renderCommand(command, scope))}
@@ -213,43 +246,43 @@ export function CommandList({ guildId, className }: CommandListProps) {
 
   if (!token) {
     return (
-      <div className={`px-4 py-4 text-xs text-muted ${className ?? ""}`}>
+      <div className={`text-sm text-muted ${className ?? ""}`}>
         Sign in with a bot token to manage slash commands.
       </div>
     );
   }
 
   return (
-    <div className={`min-h-0 overflow-y-auto px-4 py-3 ${className ?? ""}`}>
+    <div className={className}>
       {actionError && (
-        <p role="alert" className="mb-2 text-xs leading-relaxed text-danger">
+        <p role="alert" className="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
           {actionError}
         </p>
       )}
       {current?.error && (
-        <p role="alert" className="mb-2 text-xs leading-relaxed text-danger">
+        <p role="alert" className="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
           {current.error}
         </p>
       )}
-      {loading && <SkeletonRows rows={4} className="mb-2" />}
+      {loading && <SkeletonRows rows={4} avatar className="mb-4" />}
 
       {renderSection(
-        "Global commands",
-        "Available in every server. Changes can take up to an hour to show up.",
+        "Everywhere",
+        "In every server the bot is in and in DMs with it.",
         current?.global ?? [],
         null,
       )}
 
       {guild
         ? renderSection(
-            `Server commands — ${guildName}`,
-            "Only in this server, but they go live immediately.",
+            `${guildName}`,
+            "Only in this server; changes go live immediately.",
             current?.guild ?? [],
             guild,
           )
         : (
-            <p className="text-xs leading-relaxed text-muted">
-              Pick a server to see and create server-specific commands.
+            <p className="rounded-lg bg-panel px-4 py-3 text-sm text-muted">
+              Open a server to see and create commands that only exist there.
             </p>
           )}
     </div>

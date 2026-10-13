@@ -35,37 +35,41 @@ import {
 } from "@/lib/commands/validation";
 import { commandApi } from "@/lib/discord/commandApi";
 import { useClient } from "@/lib/store/client";
-import { CloseIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, CloseIcon, PlusIcon, SlashIcon } from "@/components/ui/icons";
+import { useUI } from "@/lib/store/ui";
 
 export interface CommandEditorProps {
-  /** Default scope for a new command. Falls back to the selected guild. */
-  guildId?: string | null;
   className?: string;
 }
 
 const INPUT =
-  "rounded border border-line bg-raised px-2 py-1.5 text-sm text-text placeholder:text-muted";
+  "rounded-md bg-ink px-3 py-2 text-sm font-normal text-text outline-none transition-shadow placeholder:text-faint focus:shadow-[0_0_0_1px_var(--accent)]";
 
 /** Create / edit form for one chat-input command. */
-export function CommandEditor({ guildId, className }: CommandEditorProps) {
-  const selectedGuildId = useClient((state) => state.selectedGuildId);
+export function CommandEditor({ className }: CommandEditorProps) {
   const editing = useCommandsUI((state) => state.editing);
   const startCreate = useCommandsUI((state) => state.startCreate);
 
-  const fallbackGuild = guildId ?? selectedGuildId ?? null;
-
   if (!editing) {
     return (
-      <div className={`border-t border-line px-4 py-3 ${className ?? ""}`}>
-        <p className="text-xs leading-relaxed text-muted">
-          Pick a command above to edit it, or create a new one.
+      <div
+        className={`flex flex-col items-center rounded-xl border border-dashed border-line px-6 py-12 text-center ${className ?? ""}`}
+      >
+        <span className="grid h-14 w-14 place-items-center rounded-2xl bg-accent/15 text-accent">
+          <SlashIcon size={28} />
+        </span>
+        <h3 className="mt-4 text-base font-semibold text-bright">No command selected</h3>
+        <p className="mt-1 max-w-xs text-sm text-muted">
+          Pick a command to edit it, or create a new one. Every command needs a handler that
+          answers, so it never leaves anyone hanging.
         </p>
         <button
           type="button"
-          onClick={() => startCreate(fallbackGuild)}
-          className="mt-2 rounded bg-accent/15 px-3 py-1.5 text-sm text-accent hover:bg-accent/25"
+          onClick={() => startCreate(null)}
+          className="mt-5 flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong"
         >
-          New command
+          <PlusIcon size={14} />
+          New Command
         </button>
       </div>
     );
@@ -110,8 +114,9 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
       ? draftFromOptions(command.name, command.description, command.options)
       : emptyDraft(),
   );
-  // A new command defaults to global, so it works in every server and in DMs.
-  const [target, setTarget] = useState<string | null>(command ? scope : null);
+  // "New Command" passes no scope, so a new command works everywhere unless a
+  // server's own "New" asked for that server.
+  const [target, setTarget] = useState<string | null>(scope);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -192,7 +197,11 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
           ? "Saved. Server commands are live right away."
           : "Saved. It works in every server and in DMs; new global commands can take a few minutes to appear.",
       );
-      if (!command) stopEditing();
+      if (!command) {
+        // The form closes on create, so the confirmation goes where it stays visible.
+        useUI.getState().toast(`/${body.name} created — it answers right away.`);
+        stopEditing();
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to save the command.");
     } finally {
@@ -203,16 +212,31 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className={`flex flex-col gap-2 border-t border-line px-4 py-3 ${className ?? ""}`}
+      className={`flex flex-col gap-4 rounded-xl bg-panel p-5 ${className ?? ""}`}
     >
-      <div className="flex items-baseline gap-2">
-        <h3 className="text-xs font-semibold text-muted">
-          {command ? "Edit command" : "New command"}
-        </h3>
-        {command && <span className="ml-auto font-mono text-[10px] text-muted">{command.id}</span>}
+      <div className="flex items-center gap-3 border-b border-line/60 pb-4">
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent/15 text-accent">
+          <SlashIcon size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-base font-semibold text-bright">
+            {command ? `/${command.name}` : "New Command"}
+          </h3>
+          <p className="truncate text-xs text-muted">
+            {command ? `ID ${command.id}` : "Name it, describe it, and write what it answers."}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={stopEditing}
+          aria-label="Close editor"
+          className="grid h-8 w-8 place-items-center rounded-full text-muted transition-colors hover:bg-hover hover:text-bright"
+        >
+          <CloseIcon size={16} />
+        </button>
       </div>
 
-      <label className="flex flex-col gap-1 text-xs text-muted">
+      <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted">
         Scope
         <select
           value={target ?? ""}
@@ -228,14 +252,14 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
           ))}
         </select>
       </label>
-      <p className="text-[11px] leading-relaxed text-muted">
+      <p className="-mt-2 text-xs leading-relaxed text-faint">
         {target
           ? "Server commands go live immediately in the chosen server."
           : "Works in every server the bot is in and in DMs with the bot. New global commands can take a few minutes to show up."}
         {command && " The scope of an existing command cannot be changed — delete and recreate it."}
       </p>
 
-      <label className="flex flex-col gap-1 text-xs text-muted">
+      <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted">
         Name
         <input
           value={draft.name}
@@ -245,15 +269,15 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
           className={`${INPUT} font-mono`}
         />
         {nameError ? (
-          <span className="text-[11px] text-danger">{nameError}</span>
+          <span className="text-[11px] font-normal text-danger">{nameError}</span>
         ) : (
-          <span className="text-[11px] text-muted">
+          <span className="text-[11px] font-normal text-muted">
             1–{NAME_MAX} characters, lowercase, letters/digits/- /_ only.
           </span>
         )}
       </label>
 
-      <label className="flex flex-col gap-1 text-xs text-muted">
+      <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted">
         Description
         <input
           value={draft.description}
@@ -265,35 +289,38 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
           className={INPUT}
         />
         {descriptionError ? (
-          <span className="text-[11px] text-danger">{descriptionError}</span>
+          <span className="text-[11px] font-normal text-danger">{descriptionError}</span>
         ) : (
-          <span className="font-mono text-[11px] text-muted">
+          <span className="font-mono text-[11px] font-normal text-muted">
             {draft.description.length}/{DESCRIPTION_MAX}
           </span>
         )}
       </label>
 
-      <div className="mt-1 flex items-baseline gap-2">
-        <h4 className="text-xs font-semibold text-muted">Options</h4>
+      <div className="mt-2 flex items-center gap-2 border-t border-line/60 pt-4">
+        <h4 className="text-xs font-bold tracking-wide text-muted uppercase">
+          Options — {draft.options.length}
+        </h4>
         <button
           type="button"
           disabled={draft.options.length >= OPTIONS_MAX}
           onClick={() =>
             setDraft((current) => ({ ...current, options: [...current.options, newDraftOption()] }))
           }
-          className="ml-auto rounded bg-accent/15 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/25 disabled:opacity-50"
+          className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15 disabled:opacity-50"
         >
-          + Option
+          <PlusIcon size={12} />
+          Add Option
         </button>
       </div>
 
       {draft.options.length === 0 && (
-        <p className="text-[11px] text-muted">No options — the command takes no arguments.</p>
+        <p className="-mt-2 text-xs text-faint">No options — the command takes no arguments.</p>
       )}
 
       <ul className="flex flex-col gap-2">
         {draft.options.map((option, index) => (
-          <li key={option.key} className="rounded border border-line bg-raised/40 p-2">
+          <li key={option.key} className="rounded-lg border border-line/60 bg-panel-alt p-3">
             <div className="flex items-center gap-1 pb-1.5">
               <span className="font-mono text-[10px] text-muted">#{index + 1}</span>
               <button
@@ -301,18 +328,18 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
                 onClick={() => moveOption(index, -1)}
                 disabled={index === 0}
                 aria-label="Move option up"
-                className="ml-auto rounded border border-line px-1.5 text-[11px] hover:bg-panel disabled:opacity-40"
+                className="ml-auto grid h-7 w-7 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-bright disabled:opacity-30"
               >
-                ↑
+                <ChevronDownIcon size={14} className="rotate-180" />
               </button>
               <button
                 type="button"
                 onClick={() => moveOption(index, 1)}
                 disabled={index === draft.options.length - 1}
                 aria-label="Move option down"
-                className="rounded border border-line px-1.5 text-[11px] hover:bg-panel disabled:opacity-40"
+                className="grid h-7 w-7 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-bright disabled:opacity-30"
               >
-                ↓
+                <ChevronDownIcon size={14} />
               </button>
               <button
                 type="button"
@@ -323,14 +350,14 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
                   }))
                 }
                 aria-label="Remove option"
-                className="rounded border border-line px-1.5 text-[11px] text-danger hover:bg-danger/10"
+                className="grid h-7 w-7 place-items-center rounded-md text-danger transition-colors hover:bg-danger/15"
               >
                 <CloseIcon size={12} />
               </button>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="flex flex-col gap-1 text-[11px] text-muted">
+              <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted">
                 Type
                 <select
                   value={option.type}
@@ -350,7 +377,7 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
                 </select>
               </label>
 
-              <label className="flex flex-col gap-1 text-[11px] text-muted">
+              <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted">
                 Name
                 <input
                   value={option.name}
@@ -361,7 +388,7 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
                 />
               </label>
 
-              <label className="flex flex-col gap-1 text-[11px] text-muted">
+              <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted">
                 Description
                 <input
                   value={option.description}
@@ -393,13 +420,14 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
                           choices: [...option.choices, { name: "", value: "" }],
                         })
                       }
-                      className="ml-auto rounded border border-line px-1.5 text-[11px] hover:bg-panel disabled:opacity-40"
+                      className="ml-auto flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-accent transition-colors hover:bg-accent/15 disabled:opacity-40"
                     >
-                      + Choice
+                      <PlusIcon size={11} />
+                      Choice
                     </button>
                   </div>
                   {option.choices.length === 0 && (
-                    <span className="text-[11px] text-muted">
+                    <span className="text-[11px] font-normal text-muted">
                       No choices — any value is accepted.
                     </span>
                   )}
@@ -439,7 +467,7 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
                           })
                         }
                         aria-label="Remove choice"
-                        className="rounded border border-line px-1.5 text-[11px] text-danger hover:bg-danger/10"
+                        className="grid h-7 w-7 place-items-center rounded-md text-danger transition-colors hover:bg-danger/15"
                       >
                         <CloseIcon size={12} />
                       </button>
@@ -463,26 +491,28 @@ function CommandForm({ command, scope, className }: CommandFormProps) {
       />
 
       {error && (
-        <p role="alert" className="text-xs leading-relaxed text-danger">
+        <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm leading-relaxed text-danger">
           {error}
         </p>
       )}
-      {success && <p className="text-xs leading-relaxed text-amber">{success}</p>}
+      {success && (
+        <p className="rounded-lg bg-online/10 px-3 py-2 text-sm leading-relaxed text-online">{success}</p>
+      )}
 
-      <div className="mt-1 flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="flex-1 rounded bg-accent/15 px-3 py-1.5 text-sm text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
-        >
-          {busy ? "Saving…" : command ? "Save changes" : "Create command"}
-        </button>
+      <div className="sticky bottom-0 -mx-5 -mb-5 flex items-center justify-end gap-2 rounded-b-xl bg-panel-alt px-5 py-3">
         <button
           type="button"
           onClick={stopEditing}
-          className="rounded border border-line px-3 py-1.5 text-sm hover:bg-panel"
+          className="rounded-md px-4 py-2 text-sm font-medium text-text hover:underline"
         >
           Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={busy}
+          className="flex items-center gap-2 rounded-md bg-accent px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong disabled:opacity-50"
+        >
+          {busy ? "Saving…" : command ? "Save Changes" : "Create Command"}
         </button>
       </div>
     </form>

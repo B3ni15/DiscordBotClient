@@ -326,3 +326,14 @@ body {
 .login-blob {
   animation: login-drift 14s ease-in-out infinite;
 }
+
+/*
+ * Settings blocks written for the narrow side panel carry their own small
+ * heading; on a full settings page the page title already names them.
+ */
+.settings-embed > section > h3:first-child {
+  display: none;
+}
+.settings-embed > section:last-child {
+  margin-bottom: 0;
+}

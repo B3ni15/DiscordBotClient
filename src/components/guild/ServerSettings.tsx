@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { AuditLogEvent, ChannelType, PermissionFlagsBits } from "discord-api-types/v10";
 import type {
   APIAuditLog,
@@ -21,6 +20,11 @@ import {
   ShieldIcon,
   UserIcon,
 } from "@/components/ui/icons";
+import {
+  FullscreenSettings,
+  SettingsDangerRow,
+  SettingsPageTitle,
+} from "@/components/ui/FullscreenSettings";
 import { inputClass } from "@/components/ui/Modal";
 import { Skeleton, SkeletonRows } from "@/components/ui/Skeleton";
 import { BotTag } from "@/components/ui/BotTag";
@@ -68,11 +72,8 @@ export function ServerSettings() {
   const guildExists = useClient((state) =>
     settings ? state.guilds[settings.guildId] !== undefined : false,
   );
-  if (!settings || !guildExists || typeof document === "undefined") return null;
-  return createPortal(
-    <SettingsView key={settings.guildId} guildId={settings.guildId} section={settings.section} />,
-    document.body,
-  );
+  if (!settings || !guildExists) return null;
+  return <SettingsView key={settings.guildId} guildId={settings.guildId} section={settings.section} />;
 }
 
 function SettingsView({ guildId, section }: { guildId: string; section: ServerSettingsSection }) {
@@ -81,98 +82,35 @@ function SettingsView({ guildId, section }: { guildId: string; section: ServerSe
   const open = useUI((state) => state.openServerSettings);
   const openDialog = useUI((state) => state.openDialog);
 
-  // Escape leaves the settings, unless a dialog on top of them has it.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape" || useUI.getState().dialog) return;
-      close();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close]);
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${guild.name} settings`}
-      className="fixed inset-0 z-[80] flex animate-pop-in bg-chat"
+    <FullscreenSettings
+      label={`${guild.name} settings`}
+      groups={NAV.map((group) => ({ heading: group.heading ?? guild.name, items: group.items }))}
+      active={section}
+      onSelect={(id) => open(guildId, id)}
+      onClose={close}
+      footer={
+        <SettingsDangerRow
+          label="Leave Server"
+          icon={<DoorStrokeIcon size={16} />}
+          onClick={() => openDialog({ kind: "leaveGuild", guildId })}
+        />
+      }
     >
-      <aside className="flex flex-[1_0_218px] justify-end overflow-y-auto bg-panel">
-        <nav aria-label="Server settings" className="w-[218px] py-[60px] pr-1.5 pl-5">
-          {NAV.map((group, index) => (
-            <div key={index} className={index > 0 ? "mt-2 border-t border-line/60 pt-2" : ""}>
-              <h2 className="truncate px-2.5 pb-1.5 text-xs font-bold tracking-wide text-muted uppercase">
-                {group.heading ?? guild.name}
-              </h2>
-              {group.items.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => open(guildId, item.id)}
-                  aria-current={section === item.id ? "page" : undefined}
-                  className={`mb-0.5 block w-full rounded-md px-2.5 py-1.5 text-left text-base font-medium transition-colors ${
-                    section === item.id
-                      ? "bg-raised text-bright"
-                      : "text-muted hover:bg-hover hover:text-text"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          ))}
-          <div className="mt-2 border-t border-line/60 pt-2">
-            <button
-              type="button"
-              onClick={() => openDialog({ kind: "leaveGuild", guildId })}
-              className="flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-base font-medium text-danger transition-colors hover:bg-hover"
-            >
-              Leave Server
-              <DoorStrokeIcon size={16} />
-            </button>
-          </div>
-        </nav>
-      </aside>
-
-      <main className="flex flex-[1_1_800px] items-start overflow-y-auto">
-        <div className="relative min-h-full w-full max-w-[740px] px-10 pt-[60px] pb-20">
-          {section === "overview" && <OverviewPage guildId={guildId} />}
-          {section === "roles" && <RolesPage guildId={guildId} />}
-          {section === "emoji" && <EmojiPage guildId={guildId} />}
-          {section === "members" && <MembersPage guildId={guildId} />}
-          {section === "invites" && <InvitesPage guildId={guildId} />}
-          {section === "bans" && <BansPage guildId={guildId} />}
-          {section === "audit" && <AuditLogPage guildId={guildId} />}
-        </div>
-        <div className="sticky top-0 shrink-0 pt-[60px] pr-5">
-          <button
-            type="button"
-            onClick={close}
-            aria-label="Close settings"
-            className="group/esc flex flex-col items-center gap-2 text-muted"
-          >
-            <span className="grid h-9 w-9 place-items-center rounded-full border-2 border-muted transition-colors group-hover/esc:border-bright group-hover/esc:text-bright">
-              <CloseIcon size={18} />
-            </span>
-            <span className="text-[13px] font-semibold">ESC</span>
-          </button>
-        </div>
-      </main>
-    </div>
+      {section === "overview" && <OverviewPage guildId={guildId} />}
+      {section === "roles" && <RolesPage guildId={guildId} />}
+      {section === "emoji" && <EmojiPage guildId={guildId} />}
+      {section === "members" && <MembersPage guildId={guildId} />}
+      {section === "invites" && <InvitesPage guildId={guildId} />}
+      {section === "bans" && <BansPage guildId={guildId} />}
+      {section === "audit" && <AuditLogPage guildId={guildId} />}
+    </FullscreenSettings>
   );
 }
 
 // Shared bits ---------------------------------------------------------------
 
-function PageTitle({ title, children }: { title: string; children?: React.ReactNode }) {
-  return (
-    <header className="mb-5">
-      <h1 className="text-xl font-semibold text-bright">{title}</h1>
-      {children && <p className="mt-2 text-sm leading-relaxed text-muted">{children}</p>}
-    </header>
-  );
-}
+const PageTitle = SettingsPageTitle;
 
 function Locked({ text }: { text: string }) {
   return (
