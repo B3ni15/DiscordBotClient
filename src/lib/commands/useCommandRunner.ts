@@ -7,6 +7,7 @@ import {
   type APIInteraction,
 } from "discord-api-types/v10";
 import { subscribeDispatch } from "@/lib/notifications/dispatch";
+import { commandApi } from "@/lib/discord/commandApi";
 import { useClient } from "@/lib/store/client";
 import { claimInteraction } from "./claim";
 import { runCommandScript } from "./runner";
@@ -21,9 +22,53 @@ import { patchInteraction, recordInteraction, snowflakeTimestamp } from "./useIn
 const STALE_AFTER_MS = 15_000;
 
 /**
+ * How long a command without a script here is left for anything else that
+ * answers for this bot (its own backend, say) before this client steps in.
+ * Discord allows three seconds.
+ */
+const UNHANDLED_GRACE_MS = 1_800;
+const EPHEMERAL = 1 << 6;
+
+/**
+ * A command with no script (or a switched-off one) still gets an answer, so
+ * nobody ever sees "The application did not respond". If something else has
+ * answered in the meantime, Discord refuses this one and nothing changes.
+ */
+function answerUnhandled(
+  interaction: Extract<APIInteraction, { type: InteractionType.ApplicationCommand }>,
+  reason: "off" | "missing",
+  receivedAt: number,
+) {
+  if (receivedAt - snowflakeTimestamp(interaction.id) > STALE_AFTER_MS) return;
+  const content =
+    reason === "off"
+      ? `\`/${interaction.data.name}\` is switched off right now.`
+      : `\`/${interaction.data.name}\` is not set up yet.`;
+  setTimeout(() => {
+    void claimInteraction(interaction.id).then(async (mine) => {
+      if (!mine) return;
+      try {
+        await commandApi.respond(useClient.getState().getRest(), interaction.id, interaction.token, {
+          content,
+          flags: EPHEMERAL,
+        });
+        patchInteraction(
+          interaction.id,
+          "answered",
+          reason === "off" ? "Its script is switched off; told the user." : "No script; told the user.",
+        );
+      } catch {
+        // Already answered elsewhere, or the token expired: nothing to add.
+      }
+    });
+  }, UNHANDLED_GRACE_MS);
+}
+
+/**
  * Listens for INTERACTION_CREATE for the whole session: every interaction is
  * filed in the inbox, and a slash command with an enabled script is answered by
- * running it. Mounted once, by the app shell.
+ * running it; one without gets a short private answer instead of silence.
+ * Mounted once, by the app shell.
  */
 export function useCommandRunner() {
   useEffect(
@@ -45,7 +90,10 @@ export function useCommandRunner() {
         const { user, getRest } = useClient.getState();
         if (!user) return;
         const script = getScript(user.id, interaction.data.name);
-        if (!script?.enabled || !script.code.trim()) return;
+        if (!script?.enabled || !script.code.trim()) {
+          answerUnhandled(interaction, script ? "off" : "missing", receivedAt);
+          return;
+        }
 
         if (receivedAt - snowflakeTimestamp(interaction.id) > STALE_AFTER_MS) {
           patchInteraction(

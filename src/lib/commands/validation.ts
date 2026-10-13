@@ -1,5 +1,7 @@
 import {
   ApplicationCommandOptionType,
+  ApplicationIntegrationType,
+  InteractionContextType,
   type APIApplicationCommandBasicOption,
   type APIApplicationCommandOption,
   type APIApplicationCommandOptionChoice,
@@ -149,6 +151,35 @@ function toChoices(option: DraftOption): APIApplicationCommandOptionChoice[] | u
 }
 
 /** Turns a validated draft into the REST body Discord expects. */
+/**
+ * What makes a global command usable everywhere the bot is: every server it
+ * was added to, and DMs with the bot. Only global commands take these; a
+ * server command lives in its one server.
+ */
+export const EVERYWHERE = {
+  contexts: [InteractionContextType.Guild, InteractionContextType.BotDM],
+  integration_types: [ApplicationIntegrationType.GuildInstall],
+};
+
+/**
+ * A command must do something: a handler that can never answer would leave
+ * everyone who uses it with "The application did not respond". Returns why the
+ * script falls short, or null when it is fine.
+ */
+export function validateHandler(code: string): string | null {
+  const source = code
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1")
+    .trim();
+  if (!source) {
+    return "Every command needs a handler. Write what it should answer, e.g. await reply('Pong!').";
+  }
+  if (!/\b(reply|defer|followUp|editReply|return)\b/.test(source)) {
+    return "The handler never answers. Call reply(…) (or return a message) so the command responds.";
+  }
+  return null;
+}
+
 export function draftToBody(draft: CommandDraft): RESTPostAPIApplicationCommandsJSONBody {
   return {
     name: draft.name.trim(),

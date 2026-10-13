@@ -27,6 +27,7 @@ import {
   toGatewayPresence,
   type SelfPresence,
 } from "@/lib/discord/selfPresence";
+import { dmReadPacer } from "@/lib/discord/dmPacer";
 import { RestClient } from "@/lib/discord/rest";
 import {
   claimDMs,
@@ -137,6 +138,12 @@ export interface TypingUser {
 
 export interface ClientState {
   token: string | null;
+  /**
+   * True from the first render until the stored token has been tried (or
+   * found missing), so a reload shows a loading screen rather than flashing
+   * the sign-in form first.
+   */
+  booting: boolean;
   status: GatewayStatus;
   error: string | null;
   user: APIUser | null;
@@ -203,6 +210,11 @@ export interface ClientState {
   /** Writes a channel into the store, keeping the guild's channel list sorted. */
   upsertChannel: (channel: APIChannel) => void;
   dropChannel: (channelId: string) => void;
+  /**
+   * Forgets a server the bot is no longer in, and moves the view on to the next
+   * one rather than leaving an empty sidebar behind.
+   */
+  removeGuild: (guildId: string) => void;
   getRest: () => RestClient;
   getGateway: () => GatewayClient | null;
 }
@@ -226,7 +238,7 @@ async function claimLegacyDMs(client: RestClient, botId: string) {
     // Signed out or switched bots midway: this token no longer speaks for it.
     if (rest !== client) break;
     try {
-      await api.channel(client, dm.channelId);
+      await dmReadPacer.run(client, () => api.channel(client, dm.channelId));
       claimed.push(dm.channelId);
     } catch {
       // Not this bot's channel (or gone for good).
@@ -237,6 +249,7 @@ async function claimLegacyDMs(client: RestClient, botId: string) {
 
 export const useClient = create<ClientState>((set, get) => ({
   token: null,
+  booting: true,
   status: "idle",
   error: null,
   user: null,
@@ -264,7 +277,8 @@ export const useClient = create<ClientState>((set, get) => ({
 
   restore: () => {
     const stored = localStorage.getItem(TOKEN_KEY);
-    if (stored) void get().login(stored);
+    if (stored) void get().login(stored).finally(() => set({ booting: false }));
+    else set({ booting: false });
   },
 
   login: async (token) => {
@@ -597,7 +611,49 @@ export const useClient = create<ClientState>((set, get) => ({
     set((state) => removeChannel(state, channelId));
   },
 
+  removeGuild: (guildId) => {
+    const before = get();
+    if (!before.guilds[guildId]) return;
+    const wasSelected = before.selectedGuildId === guildId;
+    const index = before.guildOrder.indexOf(guildId);
+    const goneChannels = new Set(before.channelsByGuild[guildId] ?? []);
+
+    set((state) => {
+      const guilds = { ...state.guilds };
+      delete guilds[guildId];
+      const without = <T>(record: Record<string, T>) =>
+        Object.fromEntries(Object.entries(record).filter(([id]) => id !== guildId));
+      return {
+        guilds,
+        guildOrder: state.guildOrder.filter((id) => id !== guildId),
+        channelsByGuild: without(state.channelsByGuild),
+        channelsById: Object.fromEntries(
+          Object.entries(state.channelsById).filter(([id]) => !goneChannels.has(id)),
+        ),
+        membersByGuild: without(state.membersByGuild),
+        presenceByGuild: without(state.presenceByGuild),
+        voiceStatesByGuild: without(state.voiceStatesByGuild),
+        // Leaving the server takes the bot out of its voice channel too.
+        selfVoice: state.selfVoice?.guildId === guildId ? null : state.selfVoice,
+        selectedGuildId: wasSelected ? null : state.selectedGuildId,
+        selectedChannelId:
+          state.selectedChannelId && goneChannels.has(state.selectedChannelId)
+            ? null
+            : state.selectedChannelId,
+      };
+    });
+
+    if (!wasSelected) return;
+    // Land on the neighbour, the way Discord does, or on the DMs when none is left.
+    const order = get().guildOrder;
+    const next = order[Math.min(index, order.length - 1)];
+    if (next) get().selectGuild(next);
+    else useUI.getState().setDmMode(true);
+  },
+
   openDM: async (userId, about) => {
+    // One click is one request, so it does not queue behind a running DM scan;
+    // the scan's pacer is what keeps bulk DM opening under Discord's radar.
     const channel = (await api.createDM(get().getRest(), userId)) as APIDMChannel;
     rememberDM(channel, about);
     set((state) => ({ channelsById: { ...state.channelsById, [channel.id]: channel } }));
@@ -741,24 +797,11 @@ function handleDispatch(
       break;
     }
     case "GUILD_DELETE": {
-      const { id } = raw as { id: string };
-      set((state) => {
-        const guilds = { ...state.guilds };
-        delete guilds[id];
-        return {
-          guilds,
-          guildOrder: state.guildOrder.filter((guildId) => guildId !== id),
-          presenceByGuild: Object.fromEntries(
-            Object.entries(state.presenceByGuild).filter(([guildId]) => guildId !== id),
-          ),
-          voiceStatesByGuild: Object.fromEntries(
-            Object.entries(state.voiceStatesByGuild).filter(([guildId]) => guildId !== id),
-          ),
-          // Leaving the server takes the bot out of its voice channel too.
-          selfVoice: state.selfVoice?.guildId === id ? null : state.selfVoice,
-          selectedGuildId: state.selectedGuildId === id ? null : state.selectedGuildId,
-        };
-      });
+      const { id, unavailable } = raw as { id: string; unavailable?: boolean };
+      // An outage on Discord's side, not the bot being removed: the guild comes
+      // back with a GUILD_CREATE once it recovers.
+      if (unavailable) break;
+      get().removeGuild(id);
       break;
     }
     case "GUILD_ROLE_CREATE":

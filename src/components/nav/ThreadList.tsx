@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import type { APIChannel } from "discord-api-types/v10";
 import { navApi } from "@/lib/discord/navApi";
 import { useClient } from "@/lib/store/client";
+import { ThreadIcon } from "@/components/ui/icons";
+import { SkeletonRows } from "@/components/ui/Skeleton";
 
 export interface ThreadListProps {
   /** Parent channel whose threads are listed. Defaults to the selected channel. */
@@ -138,7 +140,7 @@ export function ThreadList({
         {!guild ? (
           <p className="px-2 text-xs text-muted">Select a server to see its threads.</p>
         ) : loading ? (
-          <p className="px-2 text-xs text-muted">Loading threads…</p>
+          <SkeletonRows rows={inline ? 2 : 5} />
         ) : visible.length === 0 ? (
           <p className="px-2 text-xs leading-relaxed text-muted">
             No active threads in this channel. Archived threads are not listed.
@@ -160,8 +162,8 @@ export function ThreadList({
                         : "text-muted hover:bg-hover hover:text-text"
                     }`}
                   >
-                    <span aria-hidden className="shrink-0 text-faint">
-                      🧵
+                    <span className="text-faint">
+                      <ThreadIcon size={18} />
                     </span>
                     <span className="truncate">{name ?? thread.id}</span>
                     {count !== null && (

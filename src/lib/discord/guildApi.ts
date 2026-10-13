@@ -1,7 +1,13 @@
 import { OverwriteType } from "discord-api-types/v10";
 import type {
+  APIAuditLog,
+  APIBan,
   APIChannel,
+  APIEmoji,
+  APIGuild,
   APIGuildMember,
+  APIExtendedInvite,
+  APIInvite,
   APIRole,
   ChannelType,
 } from "discord-api-types/v10";
@@ -190,6 +196,64 @@ export const guildApi = {
     positions: Array<{ id: string; position?: number; parent_id?: string | null; lock_permissions?: boolean }>,
     reason?: string,
   ) => rest.patch<void>(`/guilds/${guildId}/channels`, { body: positions, reason }),
+
+  // The server itself -----------------------------------------------------
+
+  /** Name, icon and the system channel; `icon` is a data URI, or null to clear it. */
+  editGuild: (
+    rest: RestClient,
+    guildId: string,
+    body: {
+      name?: string;
+      icon?: string | null;
+      system_channel_id?: string | null;
+      afk_channel_id?: string | null;
+      afk_timeout?: number;
+    },
+    reason?: string,
+  ) => rest.patch<APIGuild>(`/guilds/${guildId}`, { body, reason }),
+
+  bans: (rest: RestClient, guildId: string) =>
+    rest.get<APIBan[]>(`/guilds/${guildId}/bans?limit=1000`),
+
+  invites: (rest: RestClient, guildId: string) =>
+    rest.get<APIExtendedInvite[]>(`/guilds/${guildId}/invites`),
+
+  createInvite: (
+    rest: RestClient,
+    channelId: string,
+    body: { max_age?: number; max_uses?: number; temporary?: boolean; unique?: boolean },
+    reason?: string,
+  ) => rest.post<APIInvite>(`/channels/${channelId}/invites`, { body, reason }),
+
+  deleteInvite: (rest: RestClient, code: string, reason?: string) =>
+    rest.delete<void>(`/invites/${encodeURIComponent(code)}`, { reason }),
+
+  auditLog: (rest: RestClient, guildId: string, limit = 50) =>
+    rest.get<APIAuditLog>(`/guilds/${guildId}/audit-logs?limit=${limit}`),
+
+  emojis: (rest: RestClient, guildId: string) =>
+    rest.get<APIEmoji[]>(`/guilds/${guildId}/emojis`),
+
+  /** `image` is a data URI of a PNG, JPEG, GIF or WebP up to 256 KiB. */
+  createEmoji: (rest: RestClient, guildId: string, name: string, image: string, reason?: string) =>
+    rest.post<APIEmoji>(`/guilds/${guildId}/emojis`, { body: { name, image }, reason }),
+
+  deleteEmoji: (rest: RestClient, guildId: string, emojiId: string, reason?: string) =>
+    rest.delete<void>(`/guilds/${guildId}/emojis/${emojiId}`, { reason }),
+
+  /** Fetches up to 1000 members; needs the SERVER MEMBERS intent. */
+  members: (rest: RestClient, guildId: string, limit = 1000) =>
+    rest.get<APIGuildMember[]>(`/guilds/${guildId}/members?limit=${limit}`),
+
+  // The bot itself --------------------------------------------------------
+
+  /**
+   * Takes the bot out of the server. It cannot come back on its own: someone
+   * with Manage Server has to invite it again through the OAuth2 link.
+   */
+  leaveGuild: (rest: RestClient, guildId: string) =>
+    rest.delete<void>(`/users/@me/guilds/${guildId}`),
 };
 
 /** Discord's default role colour swatches, as shown in its role editor. */

@@ -16,6 +16,7 @@ import {
   type NotificationMode,
 } from "@/lib/notifications/settings";
 import { useClient } from "@/lib/store/client";
+import { CloseIcon } from "@/components/ui/icons";
 
 export interface NotificationSettingsProps {
   className?: string;
@@ -219,7 +220,7 @@ function MutedRow({
         title="Unmute"
         className="shrink-0 text-muted transition-colors hover:text-text"
       >
-        ✕
+        <CloseIcon size={18} />
       </button>
     </li>
   );

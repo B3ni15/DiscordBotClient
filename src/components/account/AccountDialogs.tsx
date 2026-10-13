@@ -8,6 +8,7 @@ import { useAccount } from "@/lib/store/account";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
 import { passkeysAvailable } from "@/lib/vault/passkey";
+import { KeyIcon } from "@/components/ui/icons";
 
 /**
  * Everything the account needs a dialog for: setting the vault up, opening it,
@@ -90,7 +91,7 @@ function SetupDialog({ onClose }: { onClose: () => void }) {
             title={canUsePasskeys ? undefined : "This browser has no passkey support."}
             className="flex items-center gap-3 rounded bg-accent px-4 py-3 text-left text-white transition-colors hover:bg-accent-strong disabled:opacity-50"
           >
-            {busy ? <Spinner size={16} /> : <span aria-hidden className="text-lg">🔑</span>}
+            {busy ? <Spinner size={16} /> : <KeyIcon size={18} />}
             <span>
               <span className="block text-sm font-semibold">Use a passkey</span>
               <span className="block text-xs text-white/80">
@@ -264,7 +265,7 @@ function UnlockDialog({ onClose }: { onClose: () => void }) {
               disabled={busy}
               className="flex items-center gap-3 rounded bg-accent px-4 py-3 text-left text-white transition-colors hover:bg-accent-strong disabled:opacity-60"
             >
-              {busy ? <Spinner size={16} /> : <span aria-hidden className="text-lg">🔑</span>}
+              {busy ? <Spinner size={16} /> : <KeyIcon size={18} />}
               <span className="text-sm font-semibold">Unlock with a passkey</span>
             </button>
           )}

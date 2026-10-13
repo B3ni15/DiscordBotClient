@@ -88,6 +88,18 @@ export function openMenuFor(
   useContextMenu.getState().open(event.clientX, event.clientY, label, items);
 }
 
+/**
+ * Opens a menu as a dropdown under an element instead of at the pointer, the
+ * way Discord's server name opens its menu. Returns the menu's key, so the
+ * opener can tell whether the open menu is still its own.
+ */
+export function openMenuBelow(element: HTMLElement, label: string, items: MenuItem[]): number | null {
+  if (items.length === 0) return null;
+  const rect = element.getBoundingClientRect();
+  useContextMenu.getState().open(rect.left + 8, rect.bottom + 6, label, items);
+  return useContextMenu.getState().menu?.key ?? null;
+}
+
 export function separator(id: string): MenuItem {
   return { type: "separator", id };
 }

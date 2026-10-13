@@ -5,6 +5,7 @@ import {
   setGuildMuted,
   useNotificationSettings,
 } from "@/lib/notifications/settings";
+import { BellIcon, BellOffIcon } from "@/components/ui/icons";
 
 export interface MuteButtonProps {
   /** Mute a single channel. Ignored when `guildId` is given. */
@@ -37,11 +38,11 @@ export function MuteButton({ channelId, guildId, className }: MuteButtonProps) {
       title={label}
       aria-label={label}
       aria-pressed={muted}
-      className={`rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-raised ${
+      className={`grid h-6 w-6 place-items-center rounded transition-colors hover:bg-raised ${
         muted ? "text-amber" : "text-muted hover:text-text"
       } ${className ?? ""}`}
     >
-      {muted ? "🔕" : "🔔"}
+      {muted ? <BellOffIcon size={15} /> : <BellIcon size={15} />}
     </button>
   );
 }

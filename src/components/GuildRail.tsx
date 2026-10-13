@@ -11,6 +11,7 @@ import { useDMUnread, useGuildUnread } from "@/lib/notifications/unread";
 import { useClient } from "@/lib/store/client";
 import { openMenuFor } from "@/lib/store/contextMenu";
 import { useUI } from "@/lib/store/ui";
+import { ChatIcon, GearIcon, PlusIcon, SlashIcon } from "@/components/ui/icons";
 
 /** Server icons down the left edge, with Discord's sliding selection pill. */
 export function GuildRail() {
@@ -25,6 +26,8 @@ export function GuildRail() {
   const settingsOpen = useUI((state) => state.panel === "settings");
   const commandsOpen = useUI((state) => state.panel === "commands");
   const dmUnread = useDMUnread();
+  // A bot's application id is, for every bot made since 2016, its user id.
+  const botId = useClient((state) => state.user?.id);
 
   const connecting = status !== "ready" && guildOrder.length === 0;
 
@@ -37,10 +40,9 @@ export function GuildRail() {
         label="Direct messages"
         active={dmMode}
         onSelect={() => setDmMode(true)}
-        className="text-2xl leading-none"
         badge={dmUnread}
       >
-        <span aria-hidden>@</span>
+        <ChatIcon size={26} />
       </RailItem>
 
       <span className="my-1 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden />
@@ -70,6 +72,23 @@ export function GuildRail() {
             );
           })}
 
+      {botId && (
+        <RailItem
+          label="Add to a Server"
+          active={false}
+          onSelect={() =>
+            window.open(
+              `https://discord.com/oauth2/authorize?client_id=${botId}&scope=bot%20applications.commands&permissions=0`,
+              "_blank",
+              "noopener,noreferrer",
+            )
+          }
+          tone="green"
+        >
+          <PlusIcon size={22} />
+        </RailItem>
+      )}
+
       <div className="mt-auto flex shrink-0 flex-col items-center gap-2 pt-2">
         <span className="h-0.5 w-8 rounded-full bg-line" aria-hidden />
         <RailItem
@@ -77,18 +96,16 @@ export function GuildRail() {
           active={commandsOpen}
           pressed={commandsOpen}
           onSelect={() => togglePanel("commands")}
-          className="font-mono text-lg leading-none"
         >
-          <span aria-hidden>/</span>
+          <SlashIcon size={24} />
         </RailItem>
         <RailItem
           label="Settings"
           active={settingsOpen}
           pressed={settingsOpen}
           onSelect={() => togglePanel("settings")}
-          className="text-lg leading-none"
         >
-          <span aria-hidden>⚙</span>
+          <GearIcon size={24} />
         </RailItem>
       </div>
     </nav>
@@ -104,6 +121,8 @@ interface RailItemProps {
   children: React.ReactNode;
   className?: string;
   badge?: number;
+  /** Discord's green "add a server" button, rather than an accent one. */
+  tone?: "accent" | "green";
 }
 
 /**
@@ -120,6 +139,7 @@ function RailItem({
   children,
   className,
   badge = 0,
+  tone = "accent",
 }: RailItemProps) {
   const [hovered, setHovered] = useState(false);
   const pillHeight = active ? 40 : hovered ? 20 : 0;
@@ -144,9 +164,11 @@ function RailItem({
           aria-current={active && pressed === undefined ? "true" : undefined}
           aria-pressed={pressed}
           className={`grid h-12 w-12 place-items-center overflow-hidden transition-[border-radius,background-color,color] duration-200 ${
-            active
-              ? "rounded-2xl bg-accent text-white"
-              : "rounded-3xl bg-panel text-text hover:rounded-2xl hover:bg-accent hover:text-white"
+            tone === "green"
+              ? "rounded-3xl bg-panel text-online hover:rounded-2xl hover:bg-online hover:text-white"
+              : active
+                ? "rounded-2xl bg-accent text-white"
+                : "rounded-3xl bg-panel text-text hover:rounded-2xl hover:bg-accent hover:text-white"
           } ${className ?? ""}`}
         >
           {children}

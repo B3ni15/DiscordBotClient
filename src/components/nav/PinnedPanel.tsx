@@ -6,6 +6,8 @@ import { userAvatarUrl } from "@/lib/discord/cdn";
 import { navApi } from "@/lib/discord/navApi";
 import { useClient } from "@/lib/store/client";
 import { jumpToMessage } from "./jumpToMessage";
+import { CloseIcon } from "@/components/ui/icons";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 export interface PinnedPanelProps {
   /** Channel to read pins from. Defaults to the selected channel. */
@@ -98,7 +100,7 @@ export function PinnedPanel({ channelId, onJump, onClose, className }: PinnedPan
               aria-label="Close panel"
               className="text-muted hover:text-text"
             >
-              ✕
+              <CloseIcon size={18} />
             </button>
           )}
         </div>
@@ -113,7 +115,17 @@ export function PinnedPanel({ channelId, onJump, onClose, className }: PinnedPan
         {!target ? (
           <p className="px-2 text-xs text-muted">Select a channel to see its pins.</p>
         ) : loading ? (
-          <p className="px-2 text-xs text-muted">Loading…</p>
+          <div aria-label="Loading pins" className="flex flex-col gap-2 px-1">
+            {[72, 48, 64].map((width, index) => (
+              <div key={index} className="flex gap-3 rounded-md bg-panel-alt p-3">
+                <Skeleton width={32} height={32} rounded="full" />
+                <div className="flex flex-1 flex-col gap-2 pt-1">
+                  <Skeleton height={10} width="35%" rounded="sm" />
+                  <Skeleton height={10} width={`${width}%`} rounded="sm" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : current!.messages.length === 0 ? (
           <p className="px-2 text-xs leading-relaxed text-muted">
             No pinned messages in this channel. Pin one from a message’s actions.

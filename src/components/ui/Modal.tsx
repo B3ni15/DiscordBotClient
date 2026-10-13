@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { CloseIcon } from "@/components/ui/icons";
 
 export interface ModalProps {
   title: string;
@@ -89,7 +90,7 @@ export function Modal({ title, subtitle, onClose, children, footer, size = "md" 
               aria-label="Close"
               className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted transition-colors hover:text-bright"
             >
-              <span aria-hidden>✕</span>
+              <CloseIcon size={20} />
             </button>
           </div>
         </header>

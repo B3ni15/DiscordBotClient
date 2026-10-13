@@ -8,6 +8,7 @@ import { BotTag } from "@/components/ui/BotTag";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { isVerifiedBot, userBadges } from "@/lib/discord/userFlags";
 import { useClient } from "@/lib/store/client";
+import { CloseIcon } from "@/components/ui/icons";
 
 export interface SettingsProps {
   onClose?: () => void;
@@ -44,7 +45,7 @@ export function Settings({ onClose, className }: SettingsProps) {
             aria-label="Close panel"
             className="text-muted hover:text-text"
           >
-            ✕
+            <CloseIcon size={18} />
           </button>
         )}
       </header>

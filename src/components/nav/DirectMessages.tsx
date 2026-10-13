@@ -18,6 +18,7 @@ import {
   subscribeDMs,
   type StoredDM,
 } from "./dmStore";
+import { InfoIcon } from "@/components/ui/icons";
 
 export type { StoredDM };
 
@@ -171,7 +172,7 @@ export function DirectMessages({ onSelect, className }: DirectMessagesProps) {
                       aria-label={`Details of ${entry.name}`}
                       className="shrink-0 rounded px-1.5 py-1 text-xs text-muted opacity-0 transition-opacity hover:text-bright group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
                     >
-                      <span aria-hidden>ⓘ</span>
+                      <InfoIcon size={16} />
                     </button>
                     <button
                       type="button"
@@ -319,7 +320,8 @@ function DMScanner() {
         <div className="mt-2 flex animate-fade-in flex-col gap-2">
           <p className="text-[11px] leading-relaxed text-faint">
             Opens a DM with every member of the chosen servers and lists the ones that already
-            have messages. Large servers take a while because of Discord&apos;s rate limits.
+            have messages. It runs slowly on purpose — about one member every two seconds, with
+            breaks — because opening DMs in bulk gets a bot quarantined by Discord&apos;s anti-spam.
           </p>
           <select
             value={target}
@@ -362,6 +364,13 @@ function DMScanner() {
                 {progress
                   ? `${progress.guildName}: ${progress.checked} checked, ${progress.found} found`
                   : "Starting…"}
+                {progress?.pause && (
+                  <span className="block text-amber">
+                    {progress.pause.state === "backing-off"
+                      ? "Discord asked to slow down — pausing for a minute."
+                      : "Short break so Discord does not flag the bot…"}
+                  </span>
+                )}
               </span>
             </p>
           )}

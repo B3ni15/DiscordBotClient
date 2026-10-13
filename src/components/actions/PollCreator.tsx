@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Field, Modal, ModalActions, Switch, inputClass } from "@/components/ui/Modal";
 import { api } from "@/lib/discord/api";
 import { useClient } from "@/lib/store/client";
+import { CloseIcon } from "@/components/ui/icons";
 
 const QUESTION_MAX = 300;
 const ANSWER_MAX = 55;
@@ -105,7 +106,7 @@ export function PollCreator({ channelId, onClose }: { channelId: string; onClose
                   aria-label={`Remove answer ${index + 1}`}
                   className="grid h-8 w-8 shrink-0 place-items-center rounded text-muted transition-colors hover:text-danger"
                 >
-                  <span aria-hidden>✕</span>
+                  <CloseIcon size={20} />
                 </button>
               )}
             </li>

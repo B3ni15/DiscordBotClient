@@ -31,7 +31,7 @@ export function Tooltip({ label, side = "top", children, className }: TooltipPro
       onBlurCapture={() => setOpen(false)}
     >
       {children}
-      {open && (
+      {open && label != null && label !== "" && (
         <span
           aria-hidden
           className={`pointer-events-none absolute z-50 animate-pop-in rounded-md bg-floating px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap text-bright shadow-lg ${position}`}

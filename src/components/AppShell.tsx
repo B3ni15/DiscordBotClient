@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import { DirectMessages } from "@/components/nav/DirectMessages";
 import { GuildDialogs } from "@/components/guild/GuildDialogs";
+import { ServerSettings } from "@/components/guild/ServerSettings";
 import { channelMenuItems, guildMenuItems } from "@/components/context/menus";
 import { ContextMenuHost } from "@/components/ui/ContextMenu";
 import { useCommandRunner } from "@/lib/commands/useCommandRunner";
@@ -30,6 +32,7 @@ export function AppShell() {
   const selectedChannelId = useClient((state) => state.selectedChannelId);
   const dmMode = useUI((state) => state.dmMode);
   const panelOpen = useUI((state) => state.panel !== null);
+  const membersHidden = useUI((state) => state.membersHidden);
   const selectChannel = useClient((state) => state.selectChannel);
 
   useNotifications();
@@ -38,6 +41,20 @@ export function AppShell() {
   useCommandRunner();
   // Learns what the bot may do in the open server, which every menu asks about.
   useGuildPowers(selectedGuildId);
+
+  // A file dropped beside the chat would otherwise make the browser open it
+  // and navigate away from the client.
+  useEffect(() => {
+    function swallow(event: DragEvent) {
+      if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+    }
+    window.addEventListener("dragover", swallow);
+    window.addEventListener("drop", swallow);
+    return () => {
+      window.removeEventListener("dragover", swallow);
+      window.removeEventListener("drop", swallow);
+    };
+  }, []);
 
   // Only cover the app on the very first handshake; a later reconnect keeps the
   // layout up and reports itself in the status bar instead.
@@ -76,10 +93,11 @@ export function AppShell() {
         <ChatPanel />
         <SidePanel />
         {/* The member list gives way to an open panel rather than squeezing the chat. */}
-        {!dmMode && !panelOpen && <MemberSidebar />}
+        {!dmMode && !panelOpen && !membersHidden && <MemberSidebar />}
       </div>
       {(status !== "ready" || error) && <StatusBar />}
       {starting && <ConnectingOverlay />}
+      <ServerSettings />
       <ContextMenuHost />
       <GuildDialogs />
     </div>

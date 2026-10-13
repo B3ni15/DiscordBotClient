@@ -1,5 +1,6 @@
 import type { APIDMChannel, APIGuild, APIGuildMember } from "discord-api-types/v10";
 import { api } from "@/lib/discord/api";
+import { dmOpenPacer, type PacerState } from "@/lib/discord/dmPacer";
 import type { RestClient } from "@/lib/discord/rest";
 import { findDMByRecipient, rememberDM } from "./dmStore";
 
@@ -13,6 +14,8 @@ export interface DMScanProgress {
   checked: number;
   /** DMs with at least one message that were filed under Direct Messages. */
   found: number;
+  /** Set while the scan deliberately pauses so Discord does not flag the bot. */
+  pause?: { state: PacerState; until: number } | null;
 }
 
 export interface DMScanOptions {
@@ -25,7 +28,8 @@ export interface DMScanOptions {
  * servers. Bot tokens cannot list their DMs, but opening a DM with someone
  * hands back the existing channel together with its `last_message_id`, so a
  * channel that has one is a conversation worth listing. Members are walked one
- * at a time; the REST client waits out any rate limit on the way.
+ * at a time through the DM pacer: opening DMs in bulk is what gets a bot
+ * quarantined by Discord's anti-spam, so the scan is deliberately slow.
  *
  * Needs the Server Members privileged intent to page through a server's members.
  */
@@ -61,8 +65,13 @@ export async function scanGuildDMs(
         if (!findDMByRecipient(user.id)) {
           let channel: APIDMChannel | null = null;
           try {
-            channel = (await api.createDM(rest, user.id)) as APIDMChannel;
-          } catch {
+            channel = (await dmOpenPacer.run(rest, () => api.createDM(rest, user.id), {
+              signal,
+              onWait: (state, ms) =>
+                onProgress?.({ ...progress, pause: { state, until: Date.now() + ms } }),
+            })) as APIDMChannel;
+          } catch (cause) {
+            if (signal?.aborted) throw cause;
             // One member Discord will not open a DM with is no reason to stop.
           }
           if (channel?.last_message_id) {

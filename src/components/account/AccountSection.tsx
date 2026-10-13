@@ -2,6 +2,7 @@
 
 import { useAccount } from "@/lib/store/account";
 import { useUI } from "@/lib/store/ui";
+import { LinkIcon } from "@/components/ui/icons";
 
 /**
  * The account block in the settings panel: whether cloud sync is on, what it
@@ -41,7 +42,7 @@ export function AccountSection() {
             href="/api/auth/discord"
             className="mt-3 flex items-center justify-center gap-2 rounded bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong"
           >
-            <span aria-hidden>🔗</span>
+            <LinkIcon size={16} />
             Sign in with Discord
           </a>
         </div>
@@ -54,7 +55,7 @@ export function AccountSection() {
       <h3 className="pb-2 text-xs font-semibold text-muted">Sync</h3>
       <div className="rounded border border-line bg-raised px-3 py-3">
         <p className="flex items-center gap-2 text-sm">
-          <span aria-hidden>🔗</span>
+          <LinkIcon size={16} />
           <span className="min-w-0 flex-1 truncate font-semibold text-bright">
             {user?.globalName ?? user?.username}
           </span>

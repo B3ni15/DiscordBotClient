@@ -8,6 +8,7 @@ import { api } from "@/lib/discord/api";
 import { emojiUrl, userAvatarUrl } from "@/lib/discord/cdn";
 import { useClient } from "@/lib/store/client";
 import { useUI } from "@/lib/store/ui";
+import { ChartIcon } from "@/components/ui/icons";
 
 /** Discord's poll block: question, one bar per answer, the tally and the timer. */
 export function PollCard({ message, poll }: { message: APIMessage; poll: APIPoll }) {
@@ -135,7 +136,7 @@ export function PollResultNotice({ message }: { message: APIMessage }) {
 
   return (
     <p className="flex flex-wrap items-center gap-1 text-sm text-muted">
-      <span aria-hidden>📊</span>
+      <ChartIcon size={16} />
       <span>
         The poll <span className="font-semibold text-bright">{question}</span> has closed.
       </span>

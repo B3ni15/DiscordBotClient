@@ -107,7 +107,17 @@ export function guildMenuItems(guildId: string): MenuItem[] {
   const manageRoles = powers.can(PermissionFlagsBits.ManageRoles);
   const muted = isGuildMuted(guildId);
 
+  const { openServerSettings } = useUI.getState();
+
   return [
+    {
+      type: "item",
+      id: "settings",
+      label: "Server Settings",
+      icon: "⚙",
+      onSelect: () => openServerSettings(guildId),
+    },
+    separator("s0"),
     {
       type: "item",
       id: "mark-read",
@@ -172,6 +182,15 @@ export function guildMenuItems(guildId: string): MenuItem[] {
       },
     },
     { type: "item", id: "copy-id", label: "Copy server ID", icon: "🆔", onSelect: () => copyId(guildId, "Server") },
+    separator("s4"),
+    {
+      type: "item",
+      id: "leave",
+      label: "Leave server",
+      icon: "⎋",
+      danger: true,
+      onSelect: () => openDialog({ kind: "leaveGuild", guildId }),
+    },
   ];
 }
 
@@ -696,6 +715,13 @@ export function messageMenuItems(
 
   const items: MenuItem[] = [
     { type: "item", id: "reply", label: "Reply", icon: "↩", onSelect: () => handlers.onReply(message) },
+    {
+      type: "item",
+      id: "forward",
+      label: "Forward",
+      icon: "↪",
+      onSelect: () => useUI.getState().openDialog({ kind: "forward", message, guildId }),
+    },
   ];
 
   if (isOwn) {

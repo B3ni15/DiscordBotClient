@@ -17,6 +17,7 @@ import {
   type EmbedFieldDraft,
 } from "@/lib/embeds/draft";
 import { Markdown } from "@/lib/markdown";
+import { CloseIcon } from "@/components/ui/icons";
 
 const CONTENT_MAX = 2000;
 
@@ -366,7 +367,7 @@ export function EmbedCreator({
                           aria-label="Remove field"
                           className="rounded border border-line px-1.5 text-[11px] text-danger hover:bg-danger/10"
                         >
-                          ✕
+                          <CloseIcon size={18} />
                         </button>
                       </div>
                       <input

@@ -14,6 +14,17 @@ import { BotTag } from "@/components/ui/BotTag";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
+import {
+  ChatIcon,
+  HashIcon,
+  MembersIcon,
+  PinIcon,
+  SearchIcon,
+  SpeakerIcon,
+  StageIcon,
+  ThreadIcon,
+  UploadIcon,
+} from "@/components/ui/icons";
 import { userAvatarUrl } from "@/lib/discord/cdn";
 import { displayName as memberDisplayName, memberColorHex } from "@/lib/discord/roles";
 import { useClient } from "@/lib/store/client";
@@ -39,8 +50,8 @@ export function ChatPanel() {
 function EmptyChat() {
   return (
     <div className="flex flex-1 animate-fade-in flex-col items-center justify-center gap-3 bg-chat px-6 text-center">
-      <span aria-hidden className="text-5xl opacity-40">
-        💬
+      <span className="grid h-20 w-20 place-items-center rounded-full bg-panel text-muted">
+        <ChatIcon size={40} />
       </span>
       <h2 className="text-lg font-semibold text-bright">No channel open</h2>
       <p className="max-w-sm text-sm text-muted">
@@ -66,6 +77,10 @@ function ChannelView({ channelId }: { channelId: string }) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [openUserId, setOpenUserId] = useState<string | null>(null);
   const selectChannel = useClient((state) => state.selectChannel);
+  const attachToComposer = useUI((state) => state.attachToComposer);
+  /** Nesting depth of dragenter events, so leaving a child does not hide the overlay. */
+  const dragDepth = useRef(0);
+  const [dragging, setDragging] = useState(false);
 
   // Keep the newest message in view unless the reader scrolled up.
   useLayoutEffect(() => {
@@ -103,16 +118,70 @@ function ChannelView({ channelId }: { channelId: string }) {
       : channelId;
   const topic = channel && "topic" in channel ? channel.topic : null;
 
+  /** Only a drag that carries files is an upload; dragged text is left alone. */
+  function carriesFiles(event: React.DragEvent) {
+    return Array.from(event.dataTransfer.types).includes("Files");
+  }
+
+  const dropHandlers = {
+    onDragEnter: (event: React.DragEvent) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      dragDepth.current += 1;
+      setDragging(true);
+    },
+    onDragOver: (event: React.DragEvent) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    onDragLeave: (event: React.DragEvent) => {
+      if (!carriesFiles(event)) return;
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (dragDepth.current === 0) setDragging(false);
+    },
+    onDrop: (event: React.DragEvent) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      dragDepth.current = 0;
+      setDragging(false);
+      attachToComposer(Array.from(event.dataTransfer.files));
+    },
+  };
+
+  const HeaderGlyph = isVoice ? (channel?.type === 13 ? StageIcon : SpeakerIcon) : HashIcon;
+
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-chat">
+    <section {...dropHandlers} className="relative flex min-w-0 flex-1 flex-col bg-chat">
+      {dragging && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex animate-fade-in items-center justify-center bg-black/60 p-8">
+          <div className="flex w-full max-w-sm flex-col items-center rounded-2xl bg-accent p-2 text-center shadow-2xl">
+            <div className="flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed border-white/50 px-6 pt-12 pb-8">
+              <span className="-mt-20 grid h-20 w-20 place-items-center rounded-2xl bg-white text-accent shadow-lg">
+                <UploadIcon size={40} />
+              </span>
+              <p className="mt-2 text-xl font-bold text-white">
+                Upload to {isDM ? `@${channelName}` : `#${channelName}`}
+              </p>
+              <p className="text-sm text-white/80">
+                The files wait in the message box, so you can add a message before sending.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       <header
         onContextMenu={(event) => {
           if (channel) openMenuFor(event, "Channel", channelMenuItems(channel, guildId));
         }}
         className="z-10 flex h-12 shrink-0 items-center gap-2 px-4 shadow-[0_1px_0_rgba(0,0,0,0.2),0_2px_0_rgba(0,0,0,0.05)]"
       >
-        <span aria-hidden className="text-xl leading-none text-faint">
-          {isDM ? "@" : isVoice ? (channel?.type === 13 ? "📡" : "🔊") : "#"}
+        <span aria-hidden className="text-faint">
+          {isDM ? (
+            <span className="grid h-6 w-6 place-items-center text-xl leading-none font-semibold">@</span>
+          ) : (
+            <HeaderGlyph size={24} />
+          )}
         </span>
         <h2 className="truncate text-base font-semibold text-bright">{channelName}</h2>
         {topic && (
@@ -130,20 +199,21 @@ function ChannelView({ channelId }: { channelId: string }) {
                 type="button"
                 onClick={() => setCreatingThread(true)}
                 aria-label="New thread"
-                className="grid h-8 w-8 place-items-center rounded text-base text-muted transition-colors hover:bg-hover hover:text-bright"
+                className="grid h-8 w-8 place-items-center rounded text-muted transition-colors hover:text-bright"
               >
-                <span aria-hidden>🧵</span>
+                <ThreadIcon size={22} />
               </button>
             </Tooltip>
           )}
-          <HeaderButton panel="pins" label="Pinned messages" glyph="📌" />
-          <HeaderButton panel="search" label="Search" glyph="🔍" />
+          <HeaderButton panel="pins" label="Pinned messages" icon={<PinIcon size={22} />} />
+          {!isDM && <MembersButton />}
+          <HeaderButton panel="search" label="Search" icon={<SearchIcon size={20} />} />
         </div>
       </header>
 
       {isVoice && (
         <p className="flex shrink-0 items-center gap-2 border-b border-line bg-panel px-4 py-1.5 text-xs text-muted">
-          <span aria-hidden>🔇</span>
+          <SpeakerIcon size={14} />
           This is the channel&rsquo;s text chat. A bot client cannot join the voice stream itself.
         </p>
       )}
@@ -245,10 +315,18 @@ function ChannelIntro({
 }) {
   return (
     <div className={`animate-fade-in ${compact ? "pt-2 pb-6" : "flex h-full flex-col justify-end pb-6"}`}>
-      <div className="grid h-16 w-16 place-items-center rounded-full bg-raised text-3xl">
-        <span aria-hidden>{isDM ? "@" : isVoice ? "🔊" : "#"}</span>
+      <div className="grid h-[68px] w-[68px] place-items-center rounded-full bg-raised text-bright">
+        {isDM ? (
+          <span aria-hidden className="text-4xl font-semibold">
+            @
+          </span>
+        ) : isVoice ? (
+          <SpeakerIcon size={40} />
+        ) : (
+          <HashIcon size={44} />
+        )}
       </div>
-      <h3 className="mt-4 text-2xl font-bold text-bright">
+      <h3 className="mt-4 text-[32px] leading-10 font-bold text-bright">
         {isDM ? name : isVoice ? name : `Welcome to #${name}`}
       </h3>
       <p className="mt-1 text-sm text-muted">
@@ -292,11 +370,11 @@ function MessageSkeletons() {
 function HeaderButton({
   panel,
   label,
-  glyph,
+  icon,
 }: {
   panel: "pins" | "search";
   label: string;
-  glyph: string;
+  icon: React.ReactNode;
 }) {
   const togglePanel = useUI((state) => state.togglePanel);
   const active = useUI((state) => state.panel === panel);
@@ -308,11 +386,34 @@ function HeaderButton({
         onClick={() => togglePanel(panel)}
         aria-label={label}
         aria-pressed={active}
-        className={`grid h-8 w-8 place-items-center rounded text-base transition-colors ${
-          active ? "bg-hover text-bright" : "text-muted hover:bg-hover hover:text-bright"
+        className={`grid h-8 w-8 place-items-center rounded transition-colors ${
+          active ? "text-bright" : "text-muted hover:text-bright"
         }`}
       >
-        <span aria-hidden>{glyph}</span>
+        {icon}
+      </button>
+    </Tooltip>
+  );
+}
+
+/** Discord's member list toggle, at the right end of the channel header. */
+function MembersButton() {
+  const hidden = useUI((state) => state.membersHidden);
+  const toggle = useUI((state) => state.toggleMembers);
+  const label = hidden ? "Show Member List" : "Hide Member List";
+
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label={label}
+        aria-pressed={!hidden}
+        className={`grid h-8 w-8 place-items-center rounded transition-colors ${
+          hidden ? "text-muted hover:text-bright" : "text-bright"
+        }`}
+      >
+        <MembersIcon size={22} />
       </button>
     </Tooltip>
   );

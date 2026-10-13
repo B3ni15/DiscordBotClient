@@ -14,6 +14,7 @@ import {
 } from "@/lib/discord/presence";
 import { useClient } from "@/lib/store/client";
 import type { PresenceActivity } from "@/lib/store/client";
+import { GamepadIcon } from "@/components/ui/icons";
 
 /** Ticks once a second so the counter under an activity keeps moving. */
 function useNow(active: boolean): number {
@@ -82,9 +83,9 @@ export function ActivityCard({ activity }: { activity: PresenceActivity }) {
       ) : (
         <span
           aria-hidden
-          className="grid h-[60px] w-[60px] shrink-0 place-items-center rounded-lg bg-panel text-2xl"
+          className="grid h-[60px] w-[60px] shrink-0 place-items-center rounded-lg bg-panel text-muted"
         >
-          🎮
+          <GamepadIcon size={32} />
         </span>
       )}
 
