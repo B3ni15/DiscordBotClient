@@ -99,7 +99,7 @@ export class RestClient {
 
       // Bucket is exhausted until it resets.
       if (bucket.remaining <= 0 && bucket.resetAt > Date.now()) {
-        await sleep(bucket.resetAt - Date.now());
+        await sleep(bucket.resetAt - Date.now(), options.signal);
       }
 
       const url = new URL(
@@ -136,14 +136,15 @@ export class RestClient {
           retry_after?: number;
           global?: boolean;
         };
-        const retryAfterMs = (payload.retry_after ?? 1) * 1000;
+        // Cloudflare's own 429s carry no body; back off harder each time then.
+        const retryAfterMs = (payload.retry_after ?? Math.min(2 ** attempt, 30)) * 1000;
         if (payload.global) {
           this.#globalLock = sleep(retryAfterMs).then(() => {
             this.#globalLock = null;
           });
           await this.#globalLock;
         } else {
-          await sleep(retryAfterMs);
+          await sleep(retryAfterMs, options.signal);
         }
         continue;
       }
@@ -194,8 +195,23 @@ function bucketKey(method: Method, path: string): string {
   return `${method}:${template}:${major ? `${major[1]}/${major[2]}` : ""}`;
 }
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));
+/** Waits, but gives up the moment the request's signal aborts. */
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, Math.max(0, ms));
+    function onAbort() {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function formatDiscordError(status: number, code: number | undefined, message: string) {

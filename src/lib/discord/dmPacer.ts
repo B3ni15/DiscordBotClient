@@ -68,6 +68,8 @@ export class RequestPacer {
   ): Promise<T> {
     const turn = this.#queue.then(async () => {
       signal?.throwIfAborted();
+      // 429s from before this pacer's first request are not its to answer.
+      if (!this.#seenHits.has(rest)) this.#seenHits.set(rest, rest.rateLimitHits);
 
       if (this.#sinceCooldown >= this.#options.batch) {
         this.#sinceCooldown = 0;

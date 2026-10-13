@@ -6,6 +6,7 @@ import type {
   APIThreadChannel,
   APIThreadList,
 } from "discord-api-types/v10";
+import { RequestPacer, type PacerState } from "@/lib/discord/dmPacer";
 import { DISCORD_EPOCH } from "@/lib/discord/roles";
 import type { RestClient } from "@/lib/discord/rest";
 
@@ -19,6 +20,44 @@ export const EXPORTABLE_TYPES = new Set<number>([
   ChannelType.PublicThread,
   ChannelType.PrivateThread,
 ]);
+
+/**
+ * How an export talks to Discord. Every request takes its turn through the
+ * pacer, so a long export runs at an even pace instead of draining the rate
+ * limit and then sitting on 429s, which Discord counts against the bot.
+ */
+export interface Throttle {
+  rest: RestClient;
+  pacer: RequestPacer;
+  signal?: AbortSignal;
+  /** Hears when the pacer holds back, so the UI can say why it is waiting. */
+  onWait?: (state: PacerState, ms: number) => void;
+}
+
+/**
+ * Around three requests a second: a 100k-message channel takes about five
+ * minutes. Each 429 doubles the spacing for the rest of the export and rests
+ * a few seconds first; a short break every 150 requests keeps long exports
+ * from crowding out the rest of the app.
+ */
+export function createExportPacer(): RequestPacer {
+  return new RequestPacer({
+    intervalMs: 300,
+    jitterMs: 150,
+    batch: 150,
+    cooldownMs: 5_000,
+    maxIntervalMs: 5_000,
+  });
+}
+
+function get<T>(
+  throttle: Throttle,
+  path: string,
+  query?: Record<string, string | number | undefined>,
+): Promise<T> {
+  const { rest, pacer, signal, onWait } = throttle;
+  return pacer.run(rest, () => rest.get<T>(path, { query, signal }), { signal, onWait });
+}
 
 export function isExportable(channel: APIChannel | undefined): boolean {
   return channel !== undefined && EXPORTABLE_TYPES.has(channel.type);
@@ -44,12 +83,11 @@ export interface FetchProgress {
  * export still holds a coherent beginning of the history.
  */
 export async function fetchChannelMessages(
-  rest: RestClient,
+  throttle: Throttle,
   channelId: string,
   options: {
     after: Date | null;
     before: Date | null;
-    signal?: AbortSignal;
     onProgress?: (progress: FetchProgress) => void;
   },
 ): Promise<APIMessage[]> {
@@ -63,10 +101,10 @@ export async function fetchChannelMessages(
   let cursor = start.toString();
 
   for (;;) {
-    options.signal?.throwIfAborted();
-    const page = await rest.get<APIMessage[]>(`/channels/${channelId}/messages`, {
-      query: { limit: 100, after: cursor },
-      signal: options.signal,
+    throttle.signal?.throwIfAborted();
+    const page = await get<APIMessage[]>(throttle, `/channels/${channelId}/messages`, {
+      limit: 100,
+      after: cursor,
     });
     // Discord sends the page newest first even when paging forward.
     page.sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
@@ -102,30 +140,31 @@ export async function fetchChannelMessages(
  * they are tried and quietly skipped when Discord says no.
  */
 export async function fetchThreads(
-  rest: RestClient,
+  throttle: Throttle,
   guildId: string,
   parentIds: Set<string>,
-  options: { archived: boolean; signal?: AbortSignal },
+  options: { archived: boolean },
 ): Promise<APIThreadChannel[]> {
   const found = new Map<string, APIThreadChannel>();
 
-  const active = await rest.get<APIThreadList>(`/guilds/${guildId}/threads/active`, {
-    signal: options.signal,
-  });
+  const active = await get<APIThreadList>(throttle, `/guilds/${guildId}/threads/active`);
   for (const thread of active.threads as APIThreadChannel[]) {
     if (thread.parent_id && parentIds.has(thread.parent_id)) found.set(thread.id, thread);
   }
 
   if (options.archived) {
+    let privateDenied = false;
     for (const parentId of parentIds) {
       for (const kind of ["public", "private"] as const) {
+        if (kind === "private" && privateDenied) continue;
         let before: string | undefined;
         try {
           for (;;) {
-            options.signal?.throwIfAborted();
-            const page = await rest.get<APIThreadList & { has_more?: boolean }>(
+            throttle.signal?.throwIfAborted();
+            const page = await get<APIThreadList & { has_more?: boolean }>(
+              throttle,
               `/channels/${parentId}/threads/archived/${kind}`,
-              { query: { limit: 100, before }, signal: options.signal },
+              { limit: 100, before },
             );
             const threads = page.threads as APIThreadChannel[];
             for (const thread of threads) found.set(thread.id, thread);
@@ -134,8 +173,11 @@ export async function fetchThreads(
             before = last.thread_metadata.archive_timestamp;
           }
         } catch (cause) {
-          if (options.signal?.aborted) throw cause;
+          if (throttle.signal?.aborted) throw cause;
           // Missing access to this parent's archive; the rest still exports.
+          // Private archives need Manage Threads, so skip asking when that
+          // already failed once rather than collecting a 403 per channel.
+          if (kind === "private") privateDenied = true;
         }
       }
     }
@@ -145,28 +187,39 @@ export async function fetchThreads(
 }
 
 /**
+ * At most this many authors are looked up one by one. Everyone who left the
+ * server answers 404, and Discord counts every 4xx towards a limit that ends
+ * in a temporary ban, so a huge history does not get one request per author.
+ */
+export const MAX_MEMBER_LOOKUPS = 250;
+
+/**
  * Members behind the authors of an export, for nicknames and role colours.
  * The gateway rarely has them all, so the missing ones are asked for one by
- * one; someone who left the server simply stays unknown.
+ * one, busiest authors first; someone who left the server, or anyone past the
+ * cap, simply keeps their account name.
  */
 export async function fetchMissingMembers(
-  rest: RestClient,
+  throttle: Throttle,
   guildId: string,
-  userIds: Iterable<string>,
+  userIds: string[],
   known: Map<string, APIGuildMember | null>,
-  signal?: AbortSignal,
+  onProgress?: (done: number) => void,
 ): Promise<void> {
-  for (const userId of userIds) {
+  let done = 0;
+  for (const userId of userIds.slice(0, MAX_MEMBER_LOOKUPS)) {
     if (known.has(userId)) continue;
-    signal?.throwIfAborted();
+    throttle.signal?.throwIfAborted();
     try {
       known.set(
         userId,
-        await rest.get<APIGuildMember>(`/guilds/${guildId}/members/${userId}`, { signal }),
+        await get<APIGuildMember>(throttle, `/guilds/${guildId}/members/${userId}`),
       );
     } catch (cause) {
-      if (signal?.aborted) throw cause;
+      if (throttle.signal?.aborted) throw cause;
       known.set(userId, null);
     }
+    done += 1;
+    onProgress?.(done);
   }
 }
