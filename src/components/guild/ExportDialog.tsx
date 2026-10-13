@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChannelType, PermissionFlagsBits } from "discord-api-types/v10";
 import type { APIChannel } from "discord-api-types/v10";
 import {
@@ -157,7 +157,15 @@ export function ExportDialog({
     abort.current = controller;
     setError(null);
     setReport(null);
-    setProgress({ phase: "messages", current: 0, total: selected.size, label: "", messages: 0, fraction: 0 });
+    setProgress({
+      phase: "messages",
+      current: 0,
+      total: selected.size,
+      label: "",
+      messages: 0,
+      fraction: 0,
+      paused: null,
+    });
 
     try {
       const result = await runExport(
@@ -429,7 +437,7 @@ function ProgressPanel({ progress }: { progress: ExportProgress }) {
         : "Starting…";
       break;
     case "members":
-      text = `Looking up ${progress.total.toLocaleString("en-US")} authors…`;
+      text = `Looking up authors ${progress.current}/${progress.total}…`;
       break;
     case "assets":
       text = `Downloading media ${progress.current}/${progress.total}…`;
@@ -443,6 +451,7 @@ function ProgressPanel({ progress }: { progress: ExportProgress }) {
   return (
     <div className="mb-4 rounded-md bg-ink p-3" aria-live="polite">
       <p className="mb-2 truncate text-sm text-text">{text}</p>
+      {progress.paused && <PauseNotice paused={progress.paused} />}
       <div className="h-2 overflow-hidden rounded-full bg-raised">
         {width === null ? (
           <div className="h-full w-1/3 animate-pulse rounded-full bg-accent" />
@@ -454,6 +463,25 @@ function ProgressPanel({ progress }: { progress: ExportProgress }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** Says why the export is standing still, with a countdown to when it resumes. */
+function PauseNotice({ paused }: { paused: NonNullable<ExportProgress["paused"]> }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, []);
+
+  const seconds = Math.ceil((paused.until - now) / 1000);
+  if (seconds <= 0) return null;
+  return (
+    <p className="mb-2 text-xs text-muted">
+      {paused.reason === "rate-limit"
+        ? `Discord asked to slow down; resuming in ${seconds}s at a gentler pace.`
+        : `Short break to stay under Discord's rate limit; resuming in ${seconds}s.`}
+    </p>
   );
 }
 

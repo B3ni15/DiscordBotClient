@@ -4,7 +4,14 @@ import { isThreadChannel } from "@/lib/discord/permissions";
 import type { RestClient } from "@/lib/discord/rest";
 import { roleMap } from "@/lib/discord/roles";
 import { useClient } from "@/lib/store/client";
-import { fetchChannelMessages, fetchMissingMembers, fetchThreads } from "./fetch";
+import {
+  createExportPacer,
+  fetchChannelMessages,
+  fetchMissingMembers,
+  fetchThreads,
+  MAX_MEMBER_LOOKUPS,
+  type Throttle,
+} from "./fetch";
 import { FORMATS, renderExport, type ExportContext, type ExportFormat } from "./render";
 import { ZipWriter } from "./zip";
 
@@ -34,7 +41,14 @@ export interface ExportProgress {
   messages: number;
   /** 0-1 progress of the current step, when it can be told. */
   fraction: number | null;
+  /**
+   * Set while the export holds back on purpose: Discord answered 429, or the
+   * pacer takes its regular break. `until` is an epoch ms.
+   */
+  paused: { reason: "rate-limit" | "cooldown"; until: number } | null;
 }
+
+type Step = Omit<ExportProgress, "paused">;
 
 export interface ExportResult {
   blob: Blob;
@@ -73,16 +87,48 @@ function assetPath(url: string): string {
   return `assets/${hash(parsed.origin + parsed.pathname)}-${safeFileName(decodeURIComponent(base))}`;
 }
 
-async function download(url: string, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer> | null> {
-  try {
-    const response = await fetch(url, { signal });
-    if (!response.ok) return null;
-    return new Uint8Array(await response.arrayBuffer());
-  } catch (cause) {
-    if (signal.aborted) throw cause;
-    // The CDN refused the page's origin; the export keeps the link instead.
-    return null;
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      reject(signal.reason);
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Parallel media downloads; the CDN is not the API, but it limits too. */
+const DOWNLOAD_WORKERS = 4;
+
+async function download(
+  url: string,
+  signal: AbortSignal,
+  onRateLimit: (ms: number) => void,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const response = await fetch(url, { signal });
+      if (response.status === 429) {
+        // Retry-After is only readable when the CDN exposes it; back off anyway.
+        const header = Number(response.headers.get("Retry-After"));
+        const ms = header > 0 ? header * 1000 : 2_000 * 2 ** attempt;
+        onRateLimit(ms);
+        await sleep(ms, signal);
+        continue;
+      }
+      if (!response.ok) return null;
+      return new Uint8Array(await response.arrayBuffer());
+    } catch (cause) {
+      if (signal.aborted) throw cause;
+      // The CDN refused the page's origin; the export keeps the link instead.
+      return null;
+    }
   }
+  return null;
 }
 
 /**
@@ -95,6 +141,21 @@ export async function runExport(
   signal: AbortSignal,
   onProgress: (progress: ExportProgress) => void,
 ): Promise<ExportResult> {
+  // A fresh pacer per export: one slowed by an earlier run starts at full pace.
+  let step: Step = { phase: "messages", current: 0, total: 0, label: "", messages: 0, fraction: null };
+  const report = (next: Step) => {
+    step = next;
+    onProgress({ ...next, paused: null });
+  };
+  const pause = (reason: "rate-limit" | "cooldown", ms: number) =>
+    onProgress({ ...step, paused: { reason, until: Date.now() + ms } });
+  const throttle: Throttle = {
+    rest,
+    pacer: createExportPacer(),
+    signal,
+    onWait: (state, ms) => pause(state === "backing-off" ? "rate-limit" : "cooldown", ms),
+  };
+
   const state = useClient.getState();
   const guild = state.guilds[options.guildId];
   if (!guild) throw new Error("The server is no longer available.");
@@ -104,12 +165,11 @@ export async function runExport(
     .filter((channel): channel is APIChannel => channel !== undefined);
 
   if (options.threads !== "none") {
-    onProgress({ phase: "threads", current: 0, total: 0, label: "", messages: 0, fraction: null });
+    report({ phase: "threads", current: 0, total: 0, label: "", messages: 0, fraction: null });
     const parents = new Set(channels.filter((channel) => !isThreadChannel(channel)).map((c) => c.id));
     if (parents.size > 0) {
-      const threads = await fetchThreads(rest, options.guildId, parents, {
+      const threads = await fetchThreads(throttle, options.guildId, parents, {
         archived: options.threads === "all",
-        signal,
       });
       const known = new Set(channels.map((channel) => channel.id));
       // Each thread goes right after its parent, the order the sidebar shows.
@@ -129,14 +189,13 @@ export async function runExport(
 
   for (const [index, channel] of channels.entries()) {
     const label = channelLabel(channel);
-    onProgress({ phase: "messages", current: index + 1, total: channels.length, label, messages: 0, fraction: 0 });
+    report({ phase: "messages", current: index + 1, total: channels.length, label, messages: 0, fraction: 0 });
     try {
-      const messages = await fetchChannelMessages(rest, channel.id, {
+      const messages = await fetchChannelMessages(throttle, channel.id, {
         after: options.after,
         before: options.before,
-        signal,
         onProgress: ({ count, fraction }) =>
-          onProgress({ phase: "messages", current: index + 1, total: channels.length, label, messages: count, fraction }),
+          report({ phase: "messages", current: index + 1, total: channels.length, label, messages: count, fraction }),
       });
       histories.push({ channel, messages });
     } catch (cause) {
@@ -149,17 +208,25 @@ export async function runExport(
   const members = new Map<string, APIGuildMember | null>(
     Object.entries(state.membersByGuild[options.guildId] ?? {}),
   );
-  const authors = new Set<string>();
+  const authored = new Map<string, number>();
+  const count = (id: string) => authored.set(id, (authored.get(id) ?? 0) + 1);
   for (const { messages } of histories) {
     for (const message of messages) {
-      if (!message.webhook_id) authors.add(message.author.id);
-      if (message.referenced_message) authors.add(message.referenced_message.author.id);
+      if (!message.webhook_id) count(message.author.id);
+      if (message.referenced_message) count(message.referenced_message.author.id);
     }
   }
-  const missing = [...authors].filter((id) => !members.has(id));
-  if (missing.length > 0) {
-    onProgress({ phase: "members", current: 0, total: missing.length, label: "", messages: 0, fraction: null });
-    await fetchMissingMembers(rest, options.guildId, missing, members, signal);
+  // Busiest authors first, so the lookup cap leaves out the rare ones.
+  const missing = [...authored.entries()]
+    .filter(([id]) => !members.has(id))
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => id);
+  const lookups = Math.min(missing.length, MAX_MEMBER_LOOKUPS);
+  if (lookups > 0) {
+    report({ phase: "members", current: 0, total: lookups, label: "", messages: 0, fraction: 0 });
+    await fetchMissingMembers(throttle, options.guildId, missing, members, (done) =>
+      report({ phase: "members", current: done, total: lookups, label: "", messages: 0, fraction: done / lookups }),
+    );
   }
 
   const roles = roleMap(guild);
@@ -211,7 +278,7 @@ export async function runExport(
     let done = 0;
     const worker = async () => {
       for (let url = queue.shift(); url !== undefined; url = queue.shift()) {
-        const data = await download(url, signal);
+        const data = await download(url, signal, (ms) => pause("rate-limit", ms));
         if (data) {
           const path = assetPath(url);
           assets.set(url, path);
@@ -220,13 +287,13 @@ export async function runExport(
           missingAssets += 1;
         }
         done += 1;
-        onProgress({ phase: "assets", current: done, total, label: "", messages: 0, fraction: done / total });
+        report({ phase: "assets", current: done, total, label: "", messages: 0, fraction: done / total });
       }
     };
-    await Promise.all(Array.from({ length: 6 }, worker));
+    await Promise.all(Array.from({ length: DOWNLOAD_WORKERS }, worker));
   }
 
-  onProgress({ phase: "packing", current: 0, total: 0, label: "", messages: 0, fraction: null });
+  report({ phase: "packing", current: 0, total: 0, label: "", messages: 0, fraction: null });
 
   const render = (channel: APIChannel, messages: APIMessage[]) =>
     renderExport(options.format, messages, contextFor(channel, (url) => assets.get(url) ?? url));
