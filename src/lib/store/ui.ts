@@ -24,6 +24,8 @@ export type Dialog =
   | { kind: "moderate"; guildId: string; userId: string; action: "kick" | "ban" | "timeout" }
   /** Picks where to forward a message to. */
   | { kind: "forward"; message: APIMessage; guildId: string | null }
+  /** Saves channel history to a file, DiscordChatExporter style. */
+  | { kind: "exportChat"; guildId: string; channelIds?: string[] }
   /** Takes the bot out of a server, after asking. */
   | { kind: "leaveGuild"; guildId: string }
   /** Sets the encrypted vault up for the first time. */
