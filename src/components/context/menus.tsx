@@ -12,6 +12,7 @@ import {
 import { displayName, memberPermissions } from "@/lib/discord/roles";
 import { voiceApi } from "@/lib/discord/voiceApi";
 import { missingPermission, REASONS } from "@/lib/discord/useGuildPowers";
+import { isExportable } from "@/lib/export/fetch";
 import {
   isChannelMuted,
   isGuildMuted,
@@ -98,13 +99,11 @@ function copyId(id: string, what: string) {
   );
 }
 
-/** Menu of a server: the rail icon, the channel list header, its empty space. */
+/** Menu of a server: the rail icon and the channel list header. */
 export function guildMenuItems(guildId: string): MenuItem[] {
   const powers = powersFor(guildId);
   const { openDialog, toast } = useUI.getState();
   const guild = powers.state.guilds[guildId];
-  const manageChannels = powers.can(PermissionFlagsBits.ManageChannels);
-  const manageRoles = powers.can(PermissionFlagsBits.ManageRoles);
   const muted = isGuildMuted(guildId);
 
   const { openServerSettings } = useUI.getState();
@@ -137,39 +136,10 @@ export function guildMenuItems(guildId: string): MenuItem[] {
     separator("s1"),
     {
       type: "item",
-      id: "create-channel",
-      label: "Create channel",
-      icon: "＋",
-      disabled: !manageChannels,
-      reason: lock(manageChannels, powers.ready, REASONS.manageChannels),
-      onSelect: () => openDialog({ kind: "createChannel", guildId }),
-    },
-    {
-      type: "item",
-      id: "create-category",
-      label: "Create category",
-      icon: "📁",
-      disabled: !manageChannels,
-      reason: lock(manageChannels, powers.ready, REASONS.manageChannels),
-      onSelect: () =>
-        openDialog({ kind: "createChannel", guildId, type: ChannelType.GuildCategory }),
-    },
-    separator("s2"),
-    {
-      type: "item",
-      id: "create-role",
-      label: "Create role",
-      icon: "🏷",
-      disabled: !manageRoles,
-      reason: lock(manageRoles, powers.ready, REASONS.manageRoles),
-      onSelect: () => openDialog({ kind: "createRole", guildId }),
-    },
-    {
-      type: "item",
-      id: "roles",
-      label: "Server roles",
-      icon: "☰",
-      onSelect: () => openDialog({ kind: "roles", guildId }),
+      id: "export",
+      label: "Export chat…",
+      icon: "📥",
+      onSelect: () => openDialog({ kind: "exportChat", guildId }),
     },
     separator("s3"),
     {
@@ -190,6 +160,39 @@ export function guildMenuItems(guildId: string): MenuItem[] {
       icon: "⎋",
       danger: true,
       onSelect: () => openDialog({ kind: "leaveGuild", guildId }),
+    },
+  ];
+}
+
+/**
+ * Menu of the empty space in the channel list: where Discord puts creating
+ * channels and categories, now that the server menu no longer does.
+ */
+export function channelListMenuItems(guildId: string): MenuItem[] {
+  const powers = powersFor(guildId);
+  const { openDialog } = useUI.getState();
+  const manageChannels = powers.can(PermissionFlagsBits.ManageChannels);
+  const reason = lock(manageChannels, powers.ready, REASONS.manageChannels);
+
+  return [
+    {
+      type: "item",
+      id: "create-channel",
+      label: "Create channel",
+      icon: "＋",
+      disabled: !manageChannels,
+      reason,
+      onSelect: () => openDialog({ kind: "createChannel", guildId }),
+    },
+    {
+      type: "item",
+      id: "create-category",
+      label: "Create category",
+      icon: "📁",
+      disabled: !manageChannels,
+      reason,
+      onSelect: () =>
+        openDialog({ kind: "createChannel", guildId, type: ChannelType.GuildCategory }),
     },
   ];
 }
@@ -297,6 +300,20 @@ export function channelMenuItems(channel: APIChannel, guildId: string | null): M
         onSelect: () => openDialog({ kind: "createChannel", guildId, parentId }),
       },
       separator("s2"),
+    );
+  }
+
+  // Voice channels have a text chat of their own, so they export too.
+  if (guildId && isExportable(channel)) {
+    items.push(
+      {
+        type: "item",
+        id: "export",
+        label: "Export channel…",
+        icon: "📥",
+        onSelect: () => openDialog({ kind: "exportChat", guildId, channelIds: [channel.id] }),
+      },
+      separator("s2b"),
     );
   }
 

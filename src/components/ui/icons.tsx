@@ -718,6 +718,7 @@ const MENU_GLYPHS: Record<string, (props: IconProps) => React.ReactNode> = {
   "🔔": BellIcon,
   "🔕": BellOffIcon,
   "📊": ChartIcon,
+  "📥": DownloadIcon,
   "🧵": ThreadIcon,
 };
 

@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PermissionFlagsBits } from "discord-api-types/v10";
 import type { APIChannel } from "discord-api-types/v10";
-import { categoryMenuItems, channelMenuItems, guildMenuItems } from "@/components/context/menus";
+import {
+  categoryMenuItems,
+  channelListMenuItems,
+  channelMenuItems,
+  guildMenuItems,
+} from "@/components/context/menus";
 import { MuteButton } from "@/components/notifications/MuteButton";
 import { UnreadBadge } from "@/components/notifications/UnreadBadge";
 import { ThreadList } from "@/components/nav/ThreadList";
@@ -11,12 +17,16 @@ import {
   ChevronDownIcon,
   CloseIcon,
   HashIcon,
+  PlusIcon,
   ThreadIcon,
 } from "@/components/ui/icons";
 import { Skeleton, SkeletonRows } from "@/components/ui/Skeleton";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { useGuildPowers } from "@/lib/discord/useGuildPowers";
 import { useUnread } from "@/lib/notifications/unread";
 import { isTextChannel, isVoiceChannel, useClient } from "@/lib/store/client";
 import { openMenuBelow, openMenuFor, useContextMenu } from "@/lib/store/contextMenu";
+import { useUI } from "@/lib/store/ui";
 import { VoicePanel } from "@/components/voice/VoicePanel";
 import { UserPanel } from "./UserPanel";
 import { VoiceChannelRow } from "./VoiceChannelRow";
@@ -37,6 +47,9 @@ export function ChannelSidebar() {
   const channelsById = useClient((state) => state.channelsById);
   const selectedChannelId = useClient((state) => state.selectedChannelId);
   const status = useClient((state) => state.status);
+  const openDialog = useUI((state) => state.openDialog);
+  const powers = useGuildPowers(selectedGuildId);
+  const canCreate = powers.can(PermissionFlagsBits.ManageChannels);
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -48,7 +61,15 @@ export function ChannelSidebar() {
     <div className="flex w-60 shrink-0 flex-col bg-panel">
       <GuildHeader guildId={selectedGuildId} name={guild?.name ?? null} />
 
-      <div className="min-h-0 flex-1 animate-sidebar-in overflow-y-auto px-2 py-3">
+      {/* Rows open their own menus; what reaches this one is the empty space. */}
+      <div
+        onContextMenu={(event) => {
+          if (selectedGuildId) {
+            openMenuFor(event, "Channels", channelListMenuItems(selectedGuildId));
+          }
+        }}
+        className="min-h-0 flex-1 animate-sidebar-in overflow-y-auto px-2 py-3"
+      >
         {selectedChannelId && (
           <ThreadList
             channelId={selectedChannelId}
@@ -67,39 +88,61 @@ export function ChannelSidebar() {
             // Discord lists a category's text channels first, then its voice ones.
             const textChannels = group.channels.filter(isTextChannel);
             const voiceChannels = group.channels.filter(isVoiceChannel);
-            if (textChannels.length === 0 && voiceChannels.length === 0) return null;
+            // An empty category stays visible to whoever can fill it through its +.
+            const empty = textChannels.length === 0 && voiceChannels.length === 0;
+            if (empty && !(group.id && canCreate)) return null;
 
             return (
               <section key={key} className="mb-3">
                 {group.name && (
-                  <button
-                    type="button"
-                    onContextMenu={(event) => {
-                      const category = group.id ? channelsById[group.id] : undefined;
-                      if (category && selectedGuildId) {
-                        openMenuFor(
-                          event,
-                          "Category",
-                          categoryMenuItems(category, selectedGuildId, {
-                            collapsed: isCollapsed,
-                            onToggleCollapse: () =>
-                              setCollapsed((state) => ({ ...state, [key]: !isCollapsed })),
-                          }),
-                        );
-                      }
-                    }}
-                    onClick={() => setCollapsed((state) => ({ ...state, [key]: !isCollapsed }))}
-                    aria-expanded={!isCollapsed}
-                    className="flex w-full items-center gap-0.5 pt-1 pr-2 pb-1 text-xs font-semibold tracking-wide text-muted uppercase transition-colors hover:text-bright"
-                  >
-                    <span
-                      className="inline-flex transition-transform duration-200"
-                      style={{ transform: isCollapsed ? "rotate(-90deg)" : "none" }}
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onContextMenu={(event) => {
+                        const category = group.id ? channelsById[group.id] : undefined;
+                        if (category && selectedGuildId) {
+                          openMenuFor(
+                            event,
+                            "Category",
+                            categoryMenuItems(category, selectedGuildId, {
+                              collapsed: isCollapsed,
+                              onToggleCollapse: () =>
+                                setCollapsed((state) => ({ ...state, [key]: !isCollapsed })),
+                            }),
+                          );
+                        }
+                      }}
+                      onClick={() => setCollapsed((state) => ({ ...state, [key]: !isCollapsed }))}
+                      aria-expanded={!isCollapsed}
+                      className="flex min-w-0 flex-1 items-center gap-0.5 pt-1 pr-2 pb-1 text-xs font-semibold tracking-wide text-muted uppercase transition-colors hover:text-bright"
                     >
-                      <ChevronDownIcon size={12} />
-                    </span>
-                    <span className="truncate">{group.name}</span>
-                  </button>
+                      <span
+                        className="inline-flex transition-transform duration-200"
+                        style={{ transform: isCollapsed ? "rotate(-90deg)" : "none" }}
+                      >
+                        <ChevronDownIcon size={12} />
+                      </span>
+                      <span className="truncate">{group.name}</span>
+                    </button>
+                    {canCreate && selectedGuildId && group.id && (
+                      <Tooltip label="Create Channel">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openDialog({
+                              kind: "createChannel",
+                              guildId: selectedGuildId,
+                              parentId: group.id,
+                            })
+                          }
+                          aria-label={`Create channel in ${group.name}`}
+                          className="mr-1 grid h-5 w-5 place-items-center rounded text-muted transition-colors hover:text-bright"
+                        >
+                          <PlusIcon size={16} />
+                        </button>
+                      </Tooltip>
+                    )}
+                  </div>
                 )}
                 {!isCollapsed && (
                   <ul className="animate-fade-in">

@@ -6,6 +6,7 @@ import type { APIChannel } from "discord-api-types/v10";
 import { ForwardDialog } from "@/components/actions/ForwardDialog";
 import { ChannelEditor } from "@/components/guild/ChannelEditor";
 import { ChannelPermissions } from "@/components/guild/ChannelPermissions";
+import { ExportDialog } from "@/components/guild/ExportDialog";
 import {
   MemberRolesDialog,
   ModerationDialog,
@@ -84,6 +85,14 @@ export function GuildDialogs() {
       );
     case "forward":
       return <ForwardDialog message={dialog.message} guildId={dialog.guildId} onClose={close} />;
+    case "exportChat":
+      return (
+        <ExportDialog
+          guildId={dialog.guildId}
+          initialChannelIds={dialog.channelIds}
+          onClose={close}
+        />
+      );
     case "leaveGuild":
       return <LeaveGuildDialog guildId={dialog.guildId} onClose={close} />;
   }

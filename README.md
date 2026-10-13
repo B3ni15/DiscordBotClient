@@ -63,6 +63,7 @@ It runs entirely from the browser, connects directly to the Discord Gateway, and
 | 🛠️ | **Bot tooling** | Manage slash commands and handle incoming interactions |
 | 📜 | **Command scripts** | Write a JavaScript handler for a slash command in the browser; it answers the command automatically |
 | 🏛️ | **Server management** | Create, edit and delete channels, categories and roles; per-channel/category permission overwrites |
+| 📥 | **Chat export** | Save channel history as HTML (dark/light), plain text, JSON or CSV, DiscordChatExporter style |
 | 🖱️ | **Context menus** | Discord-style right-click menus on servers, channels, categories, members and messages |
 | 🛡️ | **Moderation** | Kick, ban, time out, change nicknames and manage member roles, permissions permitting |
 | 🎙️ | **Voice** | Join voice channels, mute/deafen the bot, moderate other members |
@@ -348,8 +349,9 @@ Right-click a server, channel, category, member or message to get a Discord-styl
 context menu with the actions the bot's permissions and role hierarchy actually
 allow:
 
-- Create, edit and delete channels and categories
-- Create and edit roles, and manage which roles a member has
+- Create, edit and delete channels and categories — right-click the empty space of
+  the channel list, or use the **+** next to a category
+- Create and edit roles (Server Settings → Roles), and manage which roles a member has
 - Per-channel and per-category permission overwrites
 - Kick, ban and time out members
 - Server-mute, server-deafen and disconnect members from voice
@@ -359,6 +361,21 @@ allow:
 Every destructive or permission-gated action is disabled with an explanation
 when the bot lacks the permission or is outranked by the target's roles,
 rather than failing silently against the Discord API.
+
+### 📥 Chat export
+
+Right-click a server and pick **Export chat…** (or **Export channel…** on a single
+channel), in the spirit of [DiscordChatExporter](https://github.com/Tyrrrz/DiscordChatExporter):
+
+- Pick any number of channels, grouped by category, with search and select-all
+- Formats: **HTML (Dark)**, **HTML (Light)**, **Plain text**, **JSON** and **CSV**
+- Optional date range (after / before)
+- Threads: none, the active ones, or all of them including archived ones
+- **Download media** copies attachments, avatars and emoji into the archive, so the
+  export keeps working after Discord's signed links expire
+- Several channels (or media) download as one `.zip`; a single channel as one file
+
+Everything runs in the browser with the bot's token; nothing passes through a server.
 
 ---
 
