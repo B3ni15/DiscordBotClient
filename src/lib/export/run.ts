@@ -224,9 +224,12 @@ export async function runExport(
   const lookups = Math.min(missing.length, MAX_MEMBER_LOOKUPS);
   if (lookups > 0) {
     report({ phase: "members", current: 0, total: lookups, label: "", messages: 0, fraction: 0 });
-    await fetchMissingMembers(throttle, options.guildId, missing, members, (done) =>
-      report({ phase: "members", current: done, total: lookups, label: "", messages: 0, fraction: done / lookups }),
-    );
+    await fetchMissingMembers(state.getGateway(), options.guildId, missing, members, {
+      signal,
+      onProgress: (done) =>
+        report({ phase: "members", current: done, total: lookups, label: "", messages: 0, fraction: done / lookups }),
+      onWait: (ms) => pause("rate-limit", ms),
+    });
   }
 
   const roles = roleMap(guild);
