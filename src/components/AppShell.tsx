@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { DirectMessages } from "@/components/nav/DirectMessages";
 import { GuildDialogs } from "@/components/guild/GuildDialogs";
 import { ServerSettings } from "@/components/guild/ServerSettings";
+import { CommandsPanel } from "@/components/commands/CommandsPanel";
+import { UserSettings } from "@/components/settings/UserSettings";
 import { channelMenuItems, guildMenuItems } from "@/components/context/menus";
 import { ContextMenuHost } from "@/components/ui/ContextMenu";
 import { useCommandRunner } from "@/lib/commands/useCommandRunner";
@@ -18,7 +20,7 @@ import { ChatPanel } from "./ChatPanel";
 import { ConnectingOverlay } from "./ConnectingOverlay";
 import { GuildRail } from "./GuildRail";
 import { MemberSidebar } from "./MemberSidebar";
-import { SidePanel } from "./SidePanel";
+import { SIDE_PANELS, SidePanel } from "./SidePanel";
 import { StatusBar } from "./StatusBar";
 
 /** Where the browser's own menu is more useful than ours. */
@@ -31,7 +33,8 @@ export function AppShell() {
   const selectedGuildId = useClient((state) => state.selectedGuildId);
   const selectedChannelId = useClient((state) => state.selectedChannelId);
   const dmMode = useUI((state) => state.dmMode);
-  const panelOpen = useUI((state) => state.panel !== null);
+  // Settings and commands cover the app; only a side panel takes the member list's place.
+  const panelOpen = useUI((state) => state.panel !== null && SIDE_PANELS.has(state.panel));
   const membersHidden = useUI((state) => state.membersHidden);
   const selectChannel = useClient((state) => state.selectChannel);
 
@@ -98,6 +101,8 @@ export function AppShell() {
       {(status !== "ready" || error) && <StatusBar />}
       {starting && <ConnectingOverlay />}
       <ServerSettings />
+      <UserSettings />
+      <CommandsPanel />
       <ContextMenuHost />
       <GuildDialogs />
     </div>

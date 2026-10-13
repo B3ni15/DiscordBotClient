@@ -4,83 +4,95 @@ import { useState } from "react";
 import { CommandEditor } from "@/components/commands/CommandEditor";
 import { CommandList } from "@/components/commands/CommandList";
 import { InteractionInbox } from "@/components/commands/InteractionInbox";
+import {
+  FullscreenSettings,
+  SettingsPageTitle,
+} from "@/components/ui/FullscreenSettings";
+import { InfoIcon, PlusIcon, SlashIcon } from "@/components/ui/icons";
+import { useCommandsUI } from "@/lib/commands/commandsUi";
 import { useInteractions } from "@/lib/commands/useInteractions";
-import { CloseIcon } from "@/components/ui/icons";
+import { useUI } from "@/lib/store/ui";
 
-export interface CommandsPanelProps {
-  className?: string;
-  onClose?: () => void;
-}
+type Page = "commands" | "inbox";
 
-type Tab = "commands" | "inbox";
-
-/** Slash command management: the registry on one tab, live interactions on the other. */
-export function CommandsPanel({ className, onClose }: CommandsPanelProps) {
-  const [tab, setTab] = useState<Tab>("commands");
-  // Mounted here too, so interactions keep arriving while the other tab is open.
+/**
+ * Slash command management, full screen in the style of Discord's settings:
+ * the commands with their editor side by side on one page, the interactions
+ * that came in on the other.
+ */
+export function CommandsPanel() {
+  const open = useUI((state) => state.panel === "commands");
+  const close = useUI((state) => state.closePanel);
+  const [page, setPage] = useState<Page>("commands");
+  // Mounted here too, so interactions keep arriving while the other page is open.
   const { entries } = useInteractions();
   const pending = entries.filter((entry) => entry.state === "pending").length;
+  const startCreate = useCommandsUI((state) => state.startCreate);
 
-  const tabClass = (value: Tab) =>
-    `flex-1 border-b-2 px-3 py-2 text-xs transition-colors ${
-      tab === value
-        ? "border-accent text-text"
-        : "border-transparent text-muted hover:text-text"
-    }`;
+  if (!open) return null;
 
   return (
-    <aside
-      aria-label="Slash commands"
-      className={`flex h-full min-h-0 w-full flex-col bg-panel ${className ?? ""}`}
+    <FullscreenSettings
+      label="Slash commands"
+      contentWidth={1180}
+      groups={[
+        {
+          heading: "Slash Commands",
+          items: [
+            { id: "commands", label: "Commands", icon: <SlashIcon size={16} /> },
+            {
+              id: "inbox",
+              label: "Incoming",
+              icon: <InfoIcon size={16} />,
+              badge:
+                pending > 0 ? (
+                  <span className="rounded-full bg-danger px-1.5 text-[11px] font-bold text-white">
+                    {pending}
+                  </span>
+                ) : undefined,
+            },
+          ],
+        },
+      ]}
+      active={page}
+      onSelect={setPage}
+      onClose={close}
     >
-      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line px-4">
-        <h2 className="text-xs font-semibold text-muted">Slash commands</h2>
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close panel"
-            className="text-muted hover:text-text"
+      {page === "commands" ? (
+        <>
+          <SettingsPageTitle
+            title="Commands"
+            action={
+              <button
+                type="button"
+                onClick={() => startCreate(null)}
+                className="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong"
+              >
+                <PlusIcon size={14} />
+                New Command
+              </button>
+            }
           >
-            <CloseIcon size={18} />
-          </button>
-        )}
-      </header>
-
-      <div role="tablist" className="flex shrink-0 border-b border-line">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "commands"}
-          onClick={() => setTab("commands")}
-          className={tabClass("commands")}
-        >
-          Commands
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "inbox"}
-          onClick={() => setTab("inbox")}
-          className={tabClass("inbox")}
-        >
-          Incoming
-          {pending > 0 && (
-            <span className="ml-1.5 rounded bg-amber/20 px-1 font-mono text-[10px] text-amber">
-              {pending}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {tab === "commands" ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <CommandList />
-          <CommandEditor />
-        </div>
+            The bot&rsquo;s slash commands. Each one runs its handler in this browser and always
+            answers whoever uses it.
+          </SettingsPageTitle>
+          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+            <CommandList />
+            <div className="lg:sticky lg:top-6">
+              <CommandEditor />
+            </div>
+          </div>
+        </>
       ) : (
-        <InteractionInbox className="flex-1" />
+        <>
+          <SettingsPageTitle title="Incoming">
+            Every interaction the bot received in this session. Answer the ones nothing handled.
+          </SettingsPageTitle>
+          <div className="overflow-hidden rounded-xl bg-panel">
+            <InteractionInbox />
+          </div>
+        </>
       )}
-    </aside>
+    </FullscreenSettings>
   );
 }
