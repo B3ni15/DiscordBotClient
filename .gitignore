@@ -56,3 +56,6 @@ CLAUDE.md
 # local development database
 /prisma/dev.db
 /prisma/dev.db-journal
+
+# Monaco, copied from node_modules on install (scripts/copy-monaco.mjs)
+/public/monaco/

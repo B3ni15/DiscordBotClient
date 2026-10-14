@@ -1,6 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
+import Link from "next/link";
 import {
   ApplicationCommandOptionType,
   ApplicationCommandType,
@@ -14,7 +17,14 @@ import { clearRuns, useScriptRuns, type ScriptRun } from "@/lib/commands/scriptR
 import { SCRIPT_MAX_BYTES, scriptBytes } from "@/lib/commands/scriptStore";
 import type { DraftOption } from "@/lib/commands/validation";
 import { useClient } from "@/lib/store/client";
-import { EmbedIcon, PlayIcon } from "@/components/ui/icons";
+import { CloseIcon, EmbedIcon, PlayIcon } from "@/components/ui/icons";
+import type { CodeEditorHandle } from "./CodeEditor";
+
+/** Monaco only exists in the browser, and is only worth loading once a handler is open. */
+const CodeEditor = dynamic(() => import("./CodeEditor").then((module) => module.CodeEditor), {
+  ssr: false,
+  loading: () => <div className="grid h-full min-h-48 place-items-center text-xs text-muted">Loading the editor…</div>,
+});
 
 const INPUT =
   "rounded-md bg-ink px-3 py-2 text-sm text-text outline-none transition-shadow placeholder:text-faint focus:shadow-[0_0_0_1px_var(--accent)]";
@@ -30,20 +40,18 @@ await reply({
 });
 `;
 
-/** What a script can use, shown in the editor's help. */
+/** The most used helpers, shown in the editor's help; the full reference is at /docs/commands. */
 const REFERENCE: Array<[string, string]> = [
-  ["reply(message)", "Answer the command. A string or { content, embeds, components, ephemeral }."],
-  ["defer({ ephemeral })", "“Thinking…” — buys 15 minutes. A later reply() fills it in."],
-  ["followUp(message)", "Another message after the first reply."],
-  ["editReply(message) / deleteReply()", "Change or remove the first reply."],
-  ["options.getString('name')", "Option values; also getInteger, getNumber, getBoolean, getUser, getMember, getChannel, getRole, getAttachment, getSubcommand."],
-  ["user / member", "Who used the command (member is null in DMs)."],
-  ["guildId / channelId / interaction", "Where it happened, and the raw interaction."],
-  ["send(channelId, message)", "Post a regular message into any channel the bot can write in."],
-  ["discord.get(path, query)", "Any Discord API route: also post, patch, put, delete — e.g. discord.get('/guilds/' + guildId)."],
-  ["new EmbedBuilder()", "setTitle, setDescription, setColor('#5865f2'), addFields, setImage, setFooter, setTimestamp…"],
-  ["sleep(ms) / console.log()", "Wait; write to the console below."],
-  ["return 'text'", "Shorthand for reply('text') when nothing was sent yet."],
+  ["reply(message) / defer() / followUp() / editReply()", "Answer the command. A string or { content, embeds, components, ephemeral }."],
+  ["options.getString('name')", "Option values; also getInteger, getUser, getMember, getChannel, getRole, getAttachment…"],
+  ["user / member / guildId / channelId", "Who used the command, and where."],
+  ["channels.create / edit / delete / setPermission", "Channels and categories, with permission overwrites."],
+  ["roles.create / edit / delete / add / remove", "Roles, and giving or taking them from members."],
+  ["messages.send / edit / delete / bulkDelete / react / pin", "Messages in any channel the bot can see."],
+  ["members.kick / ban / timeout / setNickname / move", "Moderation."],
+  ["webhooks.create / send / edit / delete", "Webhooks, including posting under another name."],
+  ["guild / threads / emojis / events / invites / users", "The server itself, threads, emojis, scheduled events, invites, DMs."],
+  ["discord.get / post / patch / put / delete", "Any other Discord API route."],
 ];
 
 export interface ScriptEditorProps {
@@ -76,7 +84,9 @@ export function ScriptEditor({
   const channelsById = useClient((state) => state.channelsById);
   const runs = useScriptRuns();
 
-  const textarea = useRef<HTMLTextAreaElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const editor = useRef<CodeEditorHandle | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [embedOpen, setEmbedOpen] = useState(false);
   const [testOpen, setTestOpen] = useState(false);
   const [testValues, setTestValues] = useState("");
@@ -89,27 +99,33 @@ export function ScriptEditor({
     ? runs.filter((run) => run.botId === botUser.id && run.name === runName).slice(0, 5)
     : [];
 
-  /** Replaces the selection with `text`, keeping the caret after it. */
+  /** Inserts at the cursor, or appends when the editor is not ready yet. */
   function insert(text: string) {
-    const element = textarea.current;
-    const start = element?.selectionStart ?? code.length;
-    const end = element?.selectionEnd ?? code.length;
-    const next = code.slice(0, start) + text + code.slice(end);
-    onCodeChange(next);
-    requestAnimationFrame(() => {
-      if (!element) return;
-      element.focus();
-      element.selectionStart = element.selectionEnd = start + text.length;
-    });
+    if (editor.current) {
+      editor.current.insert(text);
+      return;
+    }
+    onCodeChange(code + text);
   }
 
-  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Tab indents instead of leaving the editor; Escape still gets you out.
-    if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault();
-      insert("  ");
-    }
+  /** Ctrl/⌘+S saves the whole command, like the form's own button. */
+  function save() {
+    root.current?.closest("form")?.requestSubmit();
   }
+
+  // The large editor closes with Escape when the focus is outside the code.
+  useEffect(() => {
+    // The embed dialog on top of it takes its own Escape.
+    if (!expanded || embedOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if ((event.target as Element | null)?.closest?.(".monaco-editor")) return;
+      event.stopPropagation();
+      setExpanded(false);
+    }
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [expanded, embedOpen]);
 
   function insertEmbed(embed: APIEmbed) {
     const body = JSON.stringify(embed, null, 2).replace(/\n/g, "\n    ");
@@ -224,8 +240,10 @@ export function ScriptEditor({
     }
   }
 
+  const fileName = `${commandName.trim() || "command"}.js`;
+
   return (
-    <div className="flex flex-col gap-2.5 border-t border-line/60 pt-4">
+    <div ref={root} className="flex flex-col gap-2.5 border-t border-line/60 pt-4">
       <div className="flex items-center gap-2">
         <h4 className="text-xs font-bold tracking-wide text-muted uppercase">Handler</h4>
         <span className="rounded bg-amber/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber">JS</span>
@@ -258,27 +276,36 @@ export function ScriptEditor({
       </label>
 
       <div className="overflow-hidden rounded-lg border border-black/30 bg-floating">
-        <div className="flex items-center gap-1.5 border-b border-white/5 px-3 py-1.5">
-          <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-danger/70" />
-          <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-amber/70" />
-          <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-online/70" />
-          <span className="ml-2 font-mono text-[11px] text-faint">
-            {(commandName.trim() || "command")}.js
-          </span>
-        </div>
-        <textarea
-          ref={textarea}
-          value={code}
-          onChange={(event) => onCodeChange(event.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={14}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          placeholder="Write what the command answers, e.g. await reply('Pong!') — or start from the example."
-          aria-label="Command handler code"
-          className="block min-h-48 w-full resize-y bg-transparent px-3 py-2.5 font-mono text-[13px] leading-relaxed whitespace-pre text-text outline-none placeholder:font-sans placeholder:text-faint focus-visible:outline-none"
-        />
+        <EditorTitleBar fileName={fileName}>
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="ml-auto rounded px-2 py-0.5 text-[11px] font-medium text-muted transition-colors hover:bg-hover hover:text-text"
+            title="Open in a large editor"
+          >
+            ⤢ Expand
+          </button>
+        </EditorTitleBar>
+        {expanded ? (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="grid h-48 w-full place-items-center text-xs text-muted hover:text-text"
+          >
+            Editing in the large editor — click to bring it back here.
+          </button>
+        ) : (
+          <CodeEditor
+            path={`inline/${fileName}`}
+            value={code}
+            onChange={onCodeChange}
+            onSave={save}
+            onHandle={(handle) => {
+              editor.current = handle;
+            }}
+            className="h-80 resize-y overflow-hidden"
+          />
+        )}
       </div>
       {tooBig && (
         <p className="text-[11px] text-danger">
@@ -352,13 +379,83 @@ export function ScriptEditor({
           ))}
         </dl>
         <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
-          Scripts run in a sandboxed worker that never sees the bot token, and are stopped after{" "}
-          {SCRIPT_TIMEOUT_MS / 1000} s. One still running after 2 s is deferred automatically so
-          Discord does not give up on it.
+          The editor autocompletes all of these — type a name and a dot. Scripts run in a sandboxed
+          worker that never sees the bot token, and are stopped after {SCRIPT_TIMEOUT_MS / 1000} s.
         </p>
+        <Link
+          href="/docs/commands"
+          target="_blank"
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-link hover:underline"
+        >
+          Full reference with examples ↗
+        </Link>
       </details>
 
       <ScriptConsole runs={mine} onClear={() => botUser && clearRuns(botUser.id, runName)} />
+
+      {expanded &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Editing ${fileName}`}
+            className="fixed inset-0 z-[90] flex flex-col bg-floating"
+          >
+            <EditorTitleBar fileName={fileName} large>
+              <span className={`ml-3 font-mono text-[11px] ${tooBig ? "text-danger" : "text-faint"}`}>
+                {(bytes / 1000).toFixed(1)} / {SCRIPT_MAX_BYTES / 1000} kB
+              </span>
+              <span className="ml-auto hidden text-[11px] text-faint sm:inline">
+                Ctrl+S saves · Ctrl+Space suggests · Esc outside the code closes
+              </span>
+              <Link
+                href="/docs/commands"
+                target="_blank"
+                className="ml-3 rounded-md px-2.5 py-1 text-xs font-medium text-link hover:bg-hover"
+              >
+                Docs ↗
+              </Link>
+              <button type="button" onClick={() => setEmbedOpen(true)} className={`ml-1.5 ${GHOST_BUTTON}`}>
+                <EmbedIcon size={14} />
+                Insert embed
+              </button>
+              <button
+                type="button"
+                onClick={() => void testRun()}
+                disabled={testing || !code.trim() || !botUser}
+                className="ml-1.5 flex items-center gap-1.5 rounded-md bg-online/15 px-3 py-1.5 text-xs font-semibold text-online transition-colors hover:bg-online/25 disabled:opacity-50"
+              >
+                <PlayIcon size={12} />
+                {testing ? "Running…" : "Test run"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                aria-label="Close the large editor"
+                className="ml-1.5 grid h-8 w-8 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
+              >
+                <CloseIcon size={16} />
+              </button>
+            </EditorTitleBar>
+            <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+              <CodeEditor
+                path={`large/${fileName}`}
+                value={code}
+                onChange={onCodeChange}
+                onSave={save}
+                autoFocus
+                onHandle={(handle) => {
+                  editor.current = handle;
+                }}
+                className="min-h-0 flex-1"
+              />
+              <aside className="flex max-h-[40vh] min-h-0 flex-col gap-2 overflow-y-auto border-t border-white/5 bg-ink p-3 lg:max-h-none lg:w-[380px] lg:border-t-0 lg:border-l">
+                <ScriptConsole runs={mine} onClear={() => botUser && clearRuns(botUser.id, runName)} />
+              </aside>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {embedOpen && (
         <EmbedCreator
@@ -369,6 +466,27 @@ export function ScriptEditor({
           onConfirm={({ embed }) => insertEmbed(embed)}
         />
       )}
+    </div>
+  );
+}
+
+/** The editor's tab strip: three dots and the file name, plus whatever buttons it is given. */
+function EditorTitleBar({
+  fileName,
+  large = false,
+  children,
+}: {
+  fileName: string;
+  large?: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className={`flex items-center gap-1.5 border-b border-white/5 px-3 ${large ? "h-12" : "py-1.5"}`}>
+      <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-danger/70" />
+      <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-amber/70" />
+      <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-online/70" />
+      <span className="ml-2 font-mono text-[11px] text-faint">{fileName}</span>
+      {children}
     </div>
   );
 }
