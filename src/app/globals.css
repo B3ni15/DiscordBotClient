@@ -337,3 +337,46 @@ body {
 .settings-embed > section:last-child {
   margin-bottom: 0;
 }
+
+/* The command docs: one card per helper, and code blocks set like the editor. */
+.docs-entry {
+  margin-top: 1.25rem;
+  border-left: 2px solid var(--line);
+  padding-left: 1rem;
+}
+.legal-prose .docs-entry h3 {
+  margin: 0 0 0.35rem;
+}
+.legal-prose .docs-entry h3 code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.9rem;
+  color: var(--bright);
+}
+.docs-code {
+  margin-top: 0.75rem;
+  overflow: hidden;
+  border: 1px solid rgb(0 0 0 / 0.3);
+  border-radius: 8px;
+  background: var(--floating);
+}
+.docs-code figcaption {
+  border-bottom: 1px solid rgb(255 255 255 / 0.05);
+  padding: 0.5rem 0.9rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bright);
+}
+.docs-code pre {
+  overflow-x: auto;
+  padding: 0.75rem 0.9rem;
+  font-family: var(--font-app-mono), monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.legal-prose .docs-code code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}

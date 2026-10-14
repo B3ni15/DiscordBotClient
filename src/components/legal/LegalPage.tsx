@@ -20,8 +20,11 @@ export function LegalPage({
   updated,
   sections,
   other,
+  eyebrow = "Legal",
 }: {
   title: string;
+  /** The small label above the title. */
+  eyebrow?: string;
   /** One or two sentences: the page in short, above the details. */
   summary: React.ReactNode;
   updated: string;
@@ -40,6 +43,12 @@ export function LegalPage({
             <span className="hidden sm:inline">disbotclient</span>
           </Link>
           <nav className="ml-auto flex items-center gap-1 text-sm">
+            <Link
+              href="/docs/commands"
+              className="rounded-md px-3 py-1.5 text-muted transition-colors hover:bg-hover hover:text-text"
+            >
+              Docs
+            </Link>
             <Link
               href="/terms"
               className="rounded-md px-3 py-1.5 text-muted transition-colors hover:bg-hover hover:text-text"
@@ -68,7 +77,7 @@ export function LegalPage({
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_120%_at_20%_0%,rgb(88_101_242/0.22),transparent_60%),radial-gradient(40%_80%_at_90%_10%,rgb(235_69_158/0.12),transparent_60%)]"
         />
         <div className="relative mx-auto max-w-5xl px-5 pt-14 pb-10">
-          <p className="text-xs font-bold tracking-[0.14em] text-accent uppercase">Legal</p>
+          <p className="text-xs font-bold tracking-[0.14em] text-accent uppercase">{eyebrow}</p>
           <h1 className="mt-2 text-4xl font-bold tracking-tight text-bright">{title}</h1>
           <p className="mt-2 text-sm text-muted">Last updated {updated}</p>
           <div className="mt-6 max-w-2xl rounded-xl border border-white/5 bg-panel/70 p-4 text-[15px] leading-relaxed text-text">
