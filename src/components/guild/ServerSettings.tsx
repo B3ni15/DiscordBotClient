@@ -669,6 +669,7 @@ const MEMBER_PAGE = 100;
 function MembersPage({ guildId }: { guildId: string }) {
   const members = useClient((state) => state.membersByGuild[guildId]);
   const getRest = useClient((state) => state.getRest);
+  const upsertMembers = useClient((state) => state.upsertMembers);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState(MEMBER_PAGE);
@@ -680,17 +681,7 @@ function MembersPage({ guildId }: { guildId: string }) {
       .members(getRest(), guildId)
       .then((list) => {
         if (cancelled) return;
-        useClient.setState((state) => ({
-          membersByGuild: {
-            ...state.membersByGuild,
-            [guildId]: {
-              ...state.membersByGuild[guildId],
-              ...Object.fromEntries(
-                list.filter((member) => member.user).map((member) => [member.user!.id, member]),
-              ),
-            },
-          },
-        }));
+        upsertMembers(guildId, list);
       })
       .catch(() => {
         // Without the members intent this fails; the gateway's slice stays.
@@ -701,7 +692,7 @@ function MembersPage({ guildId }: { guildId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [getRest, guildId]);
+  }, [getRest, guildId, upsertMembers]);
 
   const sorted = useMemo(
     () => Object.values(members ?? {}).sort(compareByDisplayName),
@@ -1184,5 +1175,4 @@ function AuditLogPage({ guildId }: { guildId: string }) {
     </>
   );
 }
-
 
