@@ -53,6 +53,7 @@ import {
 } from "@/lib/voice/bridge";
 import { useAccount } from "@/lib/store/account";
 import { useUI } from "@/lib/store/ui";
+import { measureMemberSidebarMetric } from "@/lib/performance/memberSidebarPerf";
 
 const TOKEN_KEY = "disbotclient:token";
 
@@ -156,7 +157,13 @@ export interface ClientState {
   /** False once the channel's history is fully loaded. */
   hasMoreByChannel: Record<string, boolean>;
   membersByGuild: Record<string, Record<string, APIGuildMember>>;
+  /** Changes only when member-list names, roles, membership, or ordering changes. */
+  memberListVersionByGuild: Record<string, number>;
+  /** Bumped when Discord sends a fresh GUILD_CREATE snapshot for a server. */
+  memberRequestVersionByGuild: Record<string, number>;
   presenceByGuild: Record<string, Record<string, Presence>>;
+  /** Online member ids, with a stable guild map while only activity data changes. */
+  onlineMembersByGuild: Record<string, Record<string, true>>;
   /**
    * Whether the live connection carries the privileged presence intent. Without
    * it Discord sends no presence data at all, and the member list must not
@@ -205,6 +212,7 @@ export interface ClientState {
   upsertRole: (guildId: string, role: APIRole) => void;
   removeRole: (guildId: string, roleId: string) => void;
   upsertMember: (guildId: string, member: APIGuildMember) => void;
+  upsertMembers: (guildId: string, members: APIGuildMember[]) => void;
   /** Applies a member's new role set locally; the gateway echo may never come. */
   setMemberRoles: (guildId: string, userId: string, roles: string[]) => void;
   /** Writes a channel into the store, keeping the guild's channel list sorted. */
@@ -260,7 +268,10 @@ export const useClient = create<ClientState>((set, get) => ({
   messagesByChannel: {},
   hasMoreByChannel: {},
   membersByGuild: {},
+  memberListVersionByGuild: {},
+  memberRequestVersionByGuild: {},
   presenceByGuild: {},
+  onlineMembersByGuild: {},
   presenceEnabled: false,
   voiceStatesByGuild: {},
   selfVoice: null,
@@ -332,7 +343,15 @@ export const useClient = create<ClientState>((set, get) => ({
     gateway.on("error", (error) => set({ error: error.message }));
     gateway.on("dispatch", (event, data) => {
       if (event === "READY") gateway?.setPresence(toGatewayPresence(get().selfPresence));
-      handleDispatch(set, get, event, data);
+      const measuredSet: Setter = (partial) => {
+        measureMemberSidebarMetric("store-set-wall", () => set(partial));
+      };
+      const payload = data as { members?: unknown[]; presences?: unknown[] } | null;
+      measureMemberSidebarMetric(
+        `gateway-event:${event}`,
+        () => handleDispatch(measuredSet, get, event, data),
+        (payload?.members?.length ?? 0) + (payload?.presences?.length ?? 0),
+      );
     });
 
     // The voice bridge speaks Discord's voice protocol but owns no gateway, so
@@ -377,7 +396,10 @@ export const useClient = create<ClientState>((set, get) => ({
       messagesByChannel: {},
       hasMoreByChannel: {},
       membersByGuild: {},
+      memberListVersionByGuild: {},
+      memberRequestVersionByGuild: {},
       presenceByGuild: {},
+      onlineMembersByGuild: {},
       presenceEnabled: false,
       voiceStatesByGuild: {},
       selfVoice: null,
@@ -395,7 +417,11 @@ export const useClient = create<ClientState>((set, get) => ({
   },
 
   selectChannel: async (channelId) => {
-    set({ selectedChannelId: channelId });
+    if (get().selectedChannelId !== channelId) {
+      measureMemberSidebarMetric("channel-selection-store-set", () =>
+        set({ selectedChannelId: channelId }),
+      );
+    }
     // DMs and threads are not part of any GUILD_CREATE payload, so the header
     // would otherwise only have an id to show.
     if (!get().channelsById[channelId]) void get().hydrateChannel(channelId);
@@ -557,6 +583,9 @@ export const useClient = create<ClientState>((set, get) => ({
       const guild = state.guilds[guildId];
       if (!guild) return {};
       const members = state.membersByGuild[guildId];
+      const affectedMembers = members
+        ? Object.values(members).filter((member) => member.roles.includes(roleId))
+        : [];
       return {
         guilds: {
           ...state.guilds,
@@ -576,6 +605,9 @@ export const useClient = create<ClientState>((set, get) => ({
               ),
             }
           : state.membersByGuild,
+        memberListVersionByGuild: affectedMembers.length
+          ? incrementVersion(state.memberListVersionByGuild, guildId)
+          : state.memberListVersionByGuild,
       };
     });
   },
@@ -587,7 +619,35 @@ export const useClient = create<ClientState>((set, get) => ({
         ...state.membersByGuild,
         [guildId]: { ...(state.membersByGuild[guildId] ?? {}), [member.user!.id]: member },
       },
+      memberListVersionByGuild: memberListFieldsChanged(
+        state.membersByGuild[guildId]?.[member.user.id],
+        member,
+      )
+        ? incrementVersion(state.memberListVersionByGuild, guildId)
+        : state.memberListVersionByGuild,
     }));
+  },
+
+  upsertMembers: (guildId, incoming) => {
+    const updates = Object.fromEntries(
+      incoming.filter((member) => member.user).map((member) => [member.user!.id, member]),
+    );
+    if (Object.keys(updates).length === 0) return;
+    set((state) => {
+      const existing = state.membersByGuild[guildId] ?? {};
+      const changed = Object.entries(updates).some(([userId, member]) =>
+        memberListFieldsChanged(existing[userId], member),
+      );
+      return {
+        membersByGuild: {
+          ...state.membersByGuild,
+          [guildId]: { ...existing, ...updates },
+        },
+        memberListVersionByGuild: changed
+          ? incrementVersion(state.memberListVersionByGuild, guildId)
+          : state.memberListVersionByGuild,
+      };
+    });
   },
 
   setMemberRoles: (guildId, userId, roles) => {
@@ -599,6 +659,9 @@ export const useClient = create<ClientState>((set, get) => ({
           ...state.membersByGuild,
           [guildId]: { ...state.membersByGuild[guildId], [userId]: { ...member, roles } },
         },
+        memberListVersionByGuild: memberListFieldsChanged(member, { ...member, roles })
+          ? incrementVersion(state.memberListVersionByGuild, guildId)
+          : state.memberListVersionByGuild,
       };
     });
   },
@@ -631,7 +694,10 @@ export const useClient = create<ClientState>((set, get) => ({
           Object.entries(state.channelsById).filter(([id]) => !goneChannels.has(id)),
         ),
         membersByGuild: without(state.membersByGuild),
+        memberListVersionByGuild: without(state.memberListVersionByGuild),
+        memberRequestVersionByGuild: without(state.memberRequestVersionByGuild),
         presenceByGuild: without(state.presenceByGuild),
+        onlineMembersByGuild: without(state.onlineMembersByGuild),
         voiceStatesByGuild: without(state.voiceStatesByGuild),
         // Leaving the server takes the bot out of its voice channel too.
         selfVoice: state.selfVoice?.guildId === guildId ? null : state.selfVoice,
@@ -678,6 +744,39 @@ type Setter = (
   partial: Partial<ClientState> | ((state: ClientState) => Partial<ClientState>),
 ) => void;
 
+const pendingMemberListUpdates = new Set<string>();
+let memberListUpdateScheduled = false;
+
+function scheduleMemberListVersionUpdate(set: Setter, guildId: string) {
+  pendingMemberListUpdates.add(guildId);
+  if (memberListUpdateScheduled) return;
+  memberListUpdateScheduled = true;
+
+  const flush = () => {
+    memberListUpdateScheduled = false;
+    const guildIds = [...pendingMemberListUpdates];
+    pendingMemberListUpdates.clear();
+    measureMemberSidebarMetric(
+      "member-list-revision-flush",
+      () =>
+        set((state) => {
+          const versions = { ...state.memberListVersionByGuild };
+          let changed = false;
+          for (const id of guildIds) {
+            if (!state.membersByGuild[id]) continue;
+            versions[id] = (versions[id] ?? 0) + 1;
+            changed = true;
+          }
+          return changed ? { memberListVersionByGuild: versions } : {};
+        }),
+      guildIds.length,
+    );
+  };
+
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(flush);
+  else setTimeout(flush, 16);
+}
+
 function handleDispatch(
   set: Setter,
   get: () => ClientState,
@@ -694,6 +793,7 @@ function handleDispatch(
       const guild = raw as GatewayGuildCreateDispatchData;
       const channels = guild.channels ?? [];
       const presences = (guild as GatewayGuildCreateDispatchData & { presences?: unknown[] }).presences;
+      const guildPresences = presences ? presenceMap(presences) : null;
       set((state) => ({
         guilds: { ...state.guilds, [guild.id]: guild as unknown as APIGuild },
         guildOrder: state.guildOrder.includes(guild.id)
@@ -715,11 +815,22 @@ function handleDispatch(
               .map((member) => [member.user!.id, member as APIGuildMember]),
           ),
         },
+        memberListVersionByGuild: incrementVersion(state.memberListVersionByGuild, guild.id),
+        memberRequestVersionByGuild: incrementVersion(
+          state.memberRequestVersionByGuild,
+          guild.id,
+        ),
         // Without the presence intent Discord omits the array entirely; keeping
         // whatever is already known beats replacing it with an empty map.
-        presenceByGuild: presences
-          ? { ...state.presenceByGuild, [guild.id]: presenceMap(presences) }
+        presenceByGuild: guildPresences
+          ? { ...state.presenceByGuild, [guild.id]: guildPresences }
           : state.presenceByGuild,
+        onlineMembersByGuild: guildPresences
+          ? {
+              ...state.onlineMembersByGuild,
+              [guild.id]: onlineMembers(guildPresences),
+            }
+          : state.onlineMembersByGuild,
         voiceStatesByGuild: {
           ...state.voiceStatesByGuild,
           [guild.id]: voiceStateMap(guild.voice_states),
@@ -740,14 +851,22 @@ function handleDispatch(
       if (!data.guild_id || !data.user?.id) break;
       const guildId = data.guild_id;
       const userId = data.user.id;
+      const presence = toPresence(data);
       set((state) => ({
         presenceEnabled: true,
         presenceByGuild: {
           ...state.presenceByGuild,
           [guildId]: {
             ...(state.presenceByGuild[guildId] ?? {}),
-            [userId]: toPresence(data),
+            [userId]: presence,
           },
+        },
+        onlineMembersByGuild: {
+          ...state.onlineMembersByGuild,
+          [guildId]: mergeOnlineMembers(
+            state.onlineMembersByGuild[guildId],
+            { [userId]: presence },
+          ),
         },
       }));
       break;
@@ -954,6 +1073,10 @@ function handleDispatch(
     case "GUILD_MEMBER_UPDATE": {
       const member = raw as APIGuildMember & { guild_id: string };
       if (!member.user) break;
+      const memberListChanged = memberListFieldsChanged(
+        get().membersByGuild[member.guild_id]?.[member.user.id],
+        member,
+      );
       set((state) => ({
         membersByGuild: {
           ...state.membersByGuild,
@@ -963,15 +1086,20 @@ function handleDispatch(
           },
         },
       }));
+      if (memberListChanged) scheduleMemberListVersionUpdate(set, member.guild_id);
       break;
     }
     case "GUILD_MEMBER_REMOVE": {
       const data = raw as { guild_id: string; user: APIUser };
+      const memberListChanged = Boolean(get().membersByGuild[data.guild_id]?.[data.user.id]);
+      if (!memberListChanged) break;
       set((state) => {
-        const members = { ...(state.membersByGuild[data.guild_id] ?? {}) };
+        const existing = state.membersByGuild[data.guild_id] ?? {};
+        const members = { ...existing };
         delete members[data.user.id];
         return { membersByGuild: { ...state.membersByGuild, [data.guild_id]: members } };
       });
+      scheduleMemberListVersionUpdate(set, data.guild_id);
       break;
     }
     case "GUILD_MEMBERS_CHUNK": {
@@ -980,24 +1108,38 @@ function handleDispatch(
         members: APIGuildMember[];
         presences?: unknown[];
       };
-      set((state) => ({
-        membersByGuild: {
-          ...state.membersByGuild,
-          [data.guild_id]: {
-            ...(state.membersByGuild[data.guild_id] ?? {}),
-            ...Object.fromEntries(
-              data.members.filter((m) => m.user).map((m) => [m.user!.id, m]),
+      const chunkPresences = presenceMap(data.presences);
+      const chunkMembers = Object.fromEntries(
+        data.members.filter((member) => member.user).map((member) => [member.user!.id, member]),
+      );
+      const existingMembers = get().membersByGuild[data.guild_id] ?? {};
+      const memberListChanged = Object.entries(chunkMembers).some(([userId, member]) =>
+        memberListFieldsChanged(existingMembers[userId], member),
+      );
+      set((state) => {
+        const existingMembers = state.membersByGuild[data.guild_id] ?? {};
+        return {
+          membersByGuild: {
+            ...state.membersByGuild,
+            [data.guild_id]: { ...existingMembers, ...chunkMembers },
+          },
+          presenceByGuild: {
+            ...state.presenceByGuild,
+            [data.guild_id]: {
+              ...(state.presenceByGuild[data.guild_id] ?? {}),
+              ...chunkPresences,
+            },
+          },
+          onlineMembersByGuild: {
+            ...state.onlineMembersByGuild,
+            [data.guild_id]: mergeOnlineMembers(
+              state.onlineMembersByGuild[data.guild_id],
+              chunkPresences,
             ),
           },
-        },
-        presenceByGuild: {
-          ...state.presenceByGuild,
-          [data.guild_id]: {
-            ...(state.presenceByGuild[data.guild_id] ?? {}),
-            ...presenceMap(data.presences),
-          },
-        },
-      }));
+        };
+      });
+      if (memberListChanged) scheduleMemberListVersionUpdate(set, data.guild_id);
       break;
     }
   }
@@ -1171,6 +1313,51 @@ function presenceMap(presences: unknown[] | undefined): Record<string, Presence>
     if (presence.user?.id) result[presence.user.id] = toPresence(presence);
   }
   return result;
+}
+
+function memberListFieldsChanged(
+  current: APIGuildMember | undefined,
+  next: APIGuildMember,
+): boolean {
+  if (!current) return true;
+  if (
+    current.nick !== next.nick ||
+    current.user?.global_name !== next.user?.global_name ||
+    current.user?.username !== next.user?.username ||
+    current.roles.length !== next.roles.length
+  ) {
+    return true;
+  }
+  return current.roles.some((roleId, index) => roleId !== next.roles[index]);
+}
+
+function incrementVersion(versions: Record<string, number>, guildId: string) {
+  return { ...versions, [guildId]: (versions[guildId] ?? 0) + 1 };
+}
+
+const EMPTY_ONLINE_MEMBERS: Record<string, true> = {};
+
+function onlineMembers(presences: Record<string, Presence>): Record<string, true> {
+  const result: Record<string, true> = {};
+  for (const [userId, presence] of Object.entries(presences)) {
+    if (presence.status !== "offline") result[userId] = true;
+  }
+  return Object.keys(result).length > 0 ? result : EMPTY_ONLINE_MEMBERS;
+}
+
+function mergeOnlineMembers(
+  existing: Record<string, true> | undefined,
+  presences: Record<string, Presence>,
+): Record<string, true> {
+  let next: Record<string, true> | undefined;
+  for (const [userId, presence] of Object.entries(presences)) {
+    const isOnline = presence.status !== "offline";
+    if (Boolean(existing?.[userId]) === isOnline) continue;
+    next ??= { ...(existing ?? {}) };
+    if (isOnline) next[userId] = true;
+    else delete next[userId];
+  }
+  return next ?? existing ?? EMPTY_ONLINE_MEMBERS;
 }
 
 function formatClientError(cause: unknown, fallback: string) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { Profiler } from "react";
 import { useEffect } from "react";
 import { DirectMessages } from "@/components/nav/DirectMessages";
 import { GuildDialogs } from "@/components/guild/GuildDialogs";
@@ -15,6 +16,7 @@ import { useUrlSync } from "@/lib/nav/useUrlSync";
 import { useClient } from "@/lib/store/client";
 import { openMenuFor } from "@/lib/store/contextMenu";
 import { useUI } from "@/lib/store/ui";
+import { recordMemberSidebarDuration } from "@/lib/performance/memberSidebarPerf";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChatPanel } from "./ChatPanel";
 import { ConnectingOverlay } from "./ConnectingOverlay";
@@ -62,6 +64,18 @@ export function AppShell() {
   // Only cover the app on the very first handshake; a later reconnect keeps the
   // layout up and reports itself in the status bar instead.
   const starting = status !== "ready" && guildCount === 0 && !error;
+  const memberSidebar = process.env.NODE_ENV !== "production" ? (
+    <Profiler
+      id="MemberSidebar"
+      onRender={(_id, phase, actualDuration) =>
+        recordMemberSidebarDuration(`react-sidebar-render:${phase}`, actualDuration)
+      }
+    >
+      <MemberSidebar />
+    </Profiler>
+  ) : (
+    <MemberSidebar />
+  );
 
   /**
    * The app's own menu takes over from the browser's wherever the click has no
@@ -96,7 +110,7 @@ export function AppShell() {
         <ChatPanel />
         <SidePanel />
         {/* The member list gives way to an open panel rather than squeezing the chat. */}
-        {!dmMode && !panelOpen && !membersHidden && <MemberSidebar />}
+        {!dmMode && !panelOpen && !membersHidden && memberSidebar}
       </div>
       {(status !== "ready" || error) && <StatusBar />}
       {starting && <ConnectingOverlay />}
