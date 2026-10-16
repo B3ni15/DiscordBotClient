@@ -25,6 +25,10 @@ async function proxy(request: Request, context: RouteContext) {
   const retryAfter = response.headers.get("retry-after");
   if (responseContentType) responseHeaders.set("content-type", responseContentType);
   if (retryAfter) responseHeaders.set("retry-after", retryAfter);
+  // Rate-limit state, so API clients can pace themselves instead of hitting 429s.
+  for (const [name, value] of response.headers) {
+    if (name.startsWith("x-ratelimit-")) responseHeaders.set(name, value);
+  }
 
   return new Response(response.body, {
     status: response.status,

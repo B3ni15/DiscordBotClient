@@ -508,6 +508,8 @@ Discord REST requests go through the same-origin proxy:
 
 The proxy forwards the request to Discord and streams the response back. It is designed to be stateless and forwards only the headers required by the request, including authorization, content type and audit-log reason.
 
+Because it is plain HTTP, any program or AI agent with a bot token can use it too (`Authorization: Bot <token>`, same paths and JSON as Discord's v10 docs). The full reference lives at `/docs/api` (Markdown: `/docs/api.md`, OpenAPI: `/docs/openapi.json`, index for AI assistants: `/llms.txt`).
+
 The proxy does not intentionally persist:
 
 - Bot tokens

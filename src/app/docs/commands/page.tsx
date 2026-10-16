@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Fragment } from "react";
+import { CodeBlock, Inline } from "@/components/docs/DocParts";
 import { LegalPage, type LegalSection } from "@/components/legal/LegalPage";
 import {
   DOC_SECTIONS,
@@ -16,43 +16,6 @@ export const metadata: Metadata = {
     types: { "text/markdown": "/docs/commands.md" },
   },
 };
-
-/** `code` spans and bare links inside a docs paragraph. */
-function Inline({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/(`[^`]+`)/).map((part, index) => {
-        if (part.startsWith("`") && part.endsWith("`") && part.length > 1) {
-          return <code key={index}>{part.slice(1, -1)}</code>;
-        }
-        return (
-          <Fragment key={index}>
-            {part.split(/(https?:\/\/[^\s)]+)/).map((piece, inner) =>
-              /^https?:\/\//.test(piece) ? (
-                <a key={inner} href={piece} target="_blank" rel="noreferrer">
-                  {piece}
-                </a>
-              ) : (
-                piece
-              ),
-            )}
-          </Fragment>
-        );
-      })}
-    </>
-  );
-}
-
-function CodeBlock({ code, title }: { code: string; title?: string }) {
-  return (
-    <figure className="docs-code">
-      {title && <figcaption>{title}</figcaption>}
-      <pre>
-        <code className="language-js">{code}</code>
-      </pre>
-    </figure>
-  );
-}
 
 function Entry({ entry }: { entry: DocEntry }) {
   return (

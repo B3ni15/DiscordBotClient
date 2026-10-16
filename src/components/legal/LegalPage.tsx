@@ -50,6 +50,12 @@ export function LegalPage({
               Docs
             </Link>
             <Link
+              href="/docs/api"
+              className="rounded-md px-3 py-1.5 text-muted transition-colors hover:bg-hover hover:text-text"
+            >
+              API
+            </Link>
+            <Link
               href="/terms"
               className="rounded-md px-3 py-1.5 text-muted transition-colors hover:bg-hover hover:text-text"
             >
