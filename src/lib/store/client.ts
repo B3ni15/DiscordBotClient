@@ -51,6 +51,7 @@ import {
   setGatewaySender,
   useBridge,
 } from "@/lib/voice/bridge";
+import { openThread } from "@/lib/nav/openThreads";
 import { useAccount } from "@/lib/store/account";
 import { useUI } from "@/lib/store/ui";
 import { measureMemberSidebarMetric } from "@/lib/performance/memberSidebarPerf";
@@ -229,6 +230,19 @@ export interface ClientState {
 
 let rest: RestClient | null = null;
 let gateway: GatewayClient | null = null;
+
+/** A thread the user opens stays in the sidebar (and the vault) until they close it. */
+function rememberOpenThread(botId: string | undefined, channel: APIChannel | undefined) {
+  if (!botId || !channel || channel.type < 10 || channel.type > 12) return;
+  const thread = channel as APIChannel & { guild_id?: string; parent_id?: string | null };
+  if (!thread.guild_id || !thread.parent_id || !("name" in thread) || !thread.name) return;
+  openThread(botId, {
+    id: thread.id,
+    guildId: thread.guild_id,
+    parentId: thread.parent_id,
+    name: thread.name,
+  });
+}
 
 /** True while the bridge holds the voice connection, rather than nothing at all. */
 function bridgeStreaming(): boolean {
@@ -425,6 +439,7 @@ export const useClient = create<ClientState>((set, get) => ({
     // DMs and threads are not part of any GUILD_CREATE payload, so the header
     // would otherwise only have an id to show.
     if (!get().channelsById[channelId]) void get().hydrateChannel(channelId);
+    else rememberOpenThread(get().user?.id, get().channelsById[channelId]);
     if (get().messagesByChannel[channelId]) return;
     try {
       const messages = await api.messages(get().getRest(), channelId, { limit: 50 });
@@ -547,6 +562,8 @@ export const useClient = create<ClientState>((set, get) => ({
       const channel = await api.channel(get().getRest(), channelId);
       set((state) => ({ channelsById: { ...state.channelsById, [channel.id]: channel } }));
       if (channel.type === 1 || channel.type === 3) rememberDM(channel as APIDMChannel);
+      // Only the thread being looked at is "opened"; hydrating one for another reason is not.
+      if (get().selectedChannelId === channelId) rememberOpenThread(get().user?.id, channel);
     } catch {
       // Not fatal: the header falls back to the channel id.
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState, useSyncExternalStore } from "react";
 import { PermissionFlagsBits } from "discord-api-types/v10";
 import type { APIChannel } from "discord-api-types/v10";
 import {
@@ -11,7 +11,6 @@ import {
 } from "@/components/context/menus";
 import { MuteButton } from "@/components/notifications/MuteButton";
 import { UnreadBadge } from "@/components/notifications/UnreadBadge";
-import { ThreadList } from "@/components/nav/ThreadList";
 import {
   AnnouncementIcon,
   ChevronDownIcon,
@@ -22,6 +21,13 @@ import {
 } from "@/components/ui/icons";
 import { Skeleton, SkeletonRows } from "@/components/ui/Skeleton";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { navApi } from "@/lib/discord/navApi";
+import {
+  closeThread,
+  getOpenThreadsState,
+  subscribeOpenThreads,
+  type OpenThread,
+} from "@/lib/nav/openThreads";
 import { useGuildPowers } from "@/lib/discord/useGuildPowers";
 import { useUnread } from "@/lib/notifications/unread";
 import { isTextChannel, isVoiceChannel, useClient } from "@/lib/store/client";
@@ -45,11 +51,20 @@ export function ChannelSidebar() {
     selectedGuildId ? (state.channelsByGuild[selectedGuildId] ?? EMPTY_CHANNEL_IDS) : EMPTY_CHANNEL_IDS,
   );
   const channelsById = useClient((state) => state.channelsById);
-  const selectedChannelId = useClient((state) => state.selectedChannelId);
   const status = useClient((state) => state.status);
   const openDialog = useUI((state) => state.openDialog);
   const powers = useGuildPowers(selectedGuildId);
   const canCreate = powers.can(PermissionFlagsBits.ManageChannels);
+
+  const activeThreads = useActiveThreads(selectedGuildId);
+  const botId = useClient((state) => state.user?.id ?? null);
+  const openState = useSyncExternalStore(subscribeOpenThreads, getOpenThreadsState, getOpenThreadsState);
+  const threadsByParent = collectThreads(
+    selectedGuildId,
+    activeThreads,
+    botId ? (openState[botId]?.threads ?? []) : [],
+    botId,
+  );
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -70,15 +85,6 @@ export function ChannelSidebar() {
         }}
         className="min-h-0 flex-1 animate-sidebar-in overflow-y-auto px-2 py-3"
       >
-        {selectedChannelId && (
-          <ThreadList
-            channelId={selectedChannelId}
-            guildId={selectedGuildId ?? undefined}
-            variant="inline"
-            className="mb-4"
-          />
-        )}
-
         {loading ? (
           <SkeletonRows rows={8} className="pt-2" />
         ) : (
@@ -147,7 +153,12 @@ export function ChannelSidebar() {
                 {!isCollapsed && (
                   <ul className="animate-fade-in">
                     {textChannels.map((channel) => (
-                      <ChannelRow key={channel.id} channel={channel} />
+                      <Fragment key={channel.id}>
+                        <ChannelRow channel={channel} />
+                        {(threadsByParent[channel.id] ?? []).map((thread) => (
+                          <ThreadRow key={thread.id} thread={thread} botId={botId} />
+                        ))}
+                      </Fragment>
                     ))}
                     {voiceChannels.map((channel) => (
                       <VoiceChannelRow
@@ -219,6 +230,103 @@ function ChannelRow({ channel }: { channel: APIChannel }) {
         channelId={channel.id}
         className="opacity-0 transition-opacity group-hover/channel:opacity-100 focus-visible:opacity-100"
       />
+    </li>
+  );
+}
+
+interface ThreadEntry extends OpenThread {
+  /** Opened by the user, so it can be closed again; active-only threads cannot. */
+  pinned: boolean;
+}
+
+/** Active threads of the guild, refetched when the guild changes or a new thread shows up. */
+function useActiveThreads(guildId: string | null): APIChannel[] {
+  const getRest = useClient((state) => state.getRest);
+  const token = useClient((state) => state.token);
+  const selectedChannelId = useClient((state) => state.selectedChannelId);
+  const [loaded, setLoaded] = useState<{ guildId: string; threads: APIChannel[] } | null>(null);
+  const known = loaded?.guildId === guildId && loaded.threads.some((t) => t.id === selectedChannelId);
+  // Selecting a thread the list lacks (a fresh one) triggers one more fetch.
+  const refetchKey = selectedChannelId && !known ? selectedChannelId : "";
+
+  useEffect(() => {
+    if (!guildId || !token) return;
+    let cancelled = false;
+    void navApi
+      .activeThreads(getRest(), guildId)
+      .then((result) => {
+        if (!cancelled) setLoaded({ guildId, threads: result.threads ?? [] });
+      })
+      .catch(() => {
+        // Open threads still show from the saved list.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [guildId, token, getRest, refetchKey]);
+
+  return loaded?.guildId === guildId ? loaded.threads : EMPTY_THREADS;
+}
+
+const EMPTY_THREADS: APIChannel[] = [];
+
+/** Active threads plus the ones the user left open, grouped under their parent channel. */
+function collectThreads(
+  guildId: string | null,
+  active: APIChannel[],
+  open: OpenThread[],
+  botId: string | null,
+): Record<string, ThreadEntry[]> {
+  const byParent: Record<string, ThreadEntry[]> = {};
+  const seen = new Set<string>();
+  const add = (thread: OpenThread, pinned: boolean) => {
+    if (seen.has(thread.id)) return;
+    seen.add(thread.id);
+    (byParent[thread.parentId] ??= []).push({ ...thread, pinned });
+  };
+  if (!guildId) return byParent;
+  for (const thread of open) if (thread.guildId === guildId && botId) add(thread, true);
+  for (const channel of active) {
+    const thread = channel as APIChannel & { parent_id?: string | null };
+    if (thread.parent_id && "name" in thread && thread.name) {
+      add({ id: thread.id, guildId, parentId: thread.parent_id, name: thread.name }, false);
+    }
+  }
+  return byParent;
+}
+
+/** A thread nested under its channel; the saved ones carry a close button. */
+function ThreadRow({ thread, botId }: { thread: ThreadEntry; botId: string | null }) {
+  const selectedChannelId = useClient((state) => state.selectedChannelId);
+  const selectChannel = useClient((state) => state.selectChannel);
+  const active = thread.id === selectedChannelId;
+
+  return (
+    <li className="group/thread flex items-center gap-1 py-px pl-4">
+      <button
+        type="button"
+        onClick={() => void selectChannel(thread.id)}
+        aria-current={active ? "true" : undefined}
+        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm leading-5 transition-colors duration-100 ${
+          active ? "bg-raised font-medium text-bright" : "text-muted hover:bg-hover hover:text-text"
+        }`}
+      >
+        <span className="text-faint">
+          <ThreadIcon size={16} />
+        </span>
+        <span className="truncate">{thread.name}</span>
+      </button>
+      {thread.pinned && botId && (
+        <button
+          type="button"
+          onClick={() => closeThread(botId, thread.id)}
+          aria-label={`Close thread ${thread.name}`}
+          title="Close thread"
+          className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted opacity-0 transition-opacity hover:text-bright focus-visible:opacity-100 group-hover/thread:opacity-100"
+        >
+          <CloseIcon size={12} />
+        </button>
+      )}
     </li>
   );
 }
