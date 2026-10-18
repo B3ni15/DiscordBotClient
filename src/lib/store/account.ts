@@ -23,6 +23,13 @@ import {
   type ReadState,
 } from "@/lib/notifications/readState";
 import {
+  getOpenThreadsState,
+  mergeOpenThreads,
+  sanitize as sanitizeOpenThreads,
+  subscribeOpenThreads,
+  type OpenThreadsState,
+} from "@/lib/nav/openThreads";
+import {
   getSettings,
   setSettings,
   subscribeSettings,
@@ -118,6 +125,8 @@ interface AccountState {
   syncScripts: () => Promise<void>;
   /** Merges where each channel was last read with the vault's copy. */
   syncReadState: () => Promise<void>;
+  /** Merges the threads left open in the sidebar with the vault's copy. */
+  syncOpenThreads: () => Promise<void>;
 }
 
 /** The PRF output is already uniform, so HKDF needs no salt of its own. */
@@ -135,6 +144,7 @@ let syncedDMs: string | null = null;
 let syncedSettings: string | null = null;
 let syncedScripts: string | null = null;
 let syncedReadState: string | null = null;
+let syncedOpenThreads: string | null = null;
 
 /** The DM sync running right now, and whether another was asked for meanwhile. */
 let dmSync: Promise<void> | null = null;
@@ -188,6 +198,7 @@ export const useAccount = create<AccountState>((set, get) => ({
         await get().syncSettings();
         await get().syncScripts();
         await get().syncReadState();
+        await get().syncOpenThreads();
         startWatching(get);
         return;
       }
@@ -261,6 +272,7 @@ export const useAccount = create<AccountState>((set, get) => ({
       await pushSettings();
       await get().syncScripts();
       await get().syncReadState();
+      await get().syncOpenThreads();
       startWatching(get);
     } catch (cause) {
       vaultKey = null;
@@ -479,6 +491,8 @@ export const useAccount = create<AccountState>((set, get) => ({
   },
 
   syncReadState: one(() => syncReadStateOnce()),
+
+  syncOpenThreads: one(() => syncOpenThreadsOnce()),
 }));
 
 /**
@@ -526,6 +540,14 @@ function startWatching(get: () => AccountState) {
       if (JSON.stringify(getReadState()) !== syncedReadState) void get().syncReadState();
     }, 30_000);
   });
+  let threadTimer: ReturnType<typeof setTimeout> | null = null;
+  const unsubscribeOpenThreads = subscribeOpenThreads(() => {
+    if (threadTimer) clearTimeout(threadTimer);
+    threadTimer = setTimeout(() => {
+      threadTimer = null;
+      if (JSON.stringify(getOpenThreadsState()) !== syncedOpenThreads) void get().syncOpenThreads();
+    }, 1500);
+  });
   const unsubscribeScripts = subscribeScripts(() => {
     if (scriptTimer) clearTimeout(scriptTimer);
     scriptTimer = setTimeout(() => {
@@ -552,6 +574,8 @@ function startWatching(get: () => AccountState) {
     if (settingsTimer) clearTimeout(settingsTimer);
     if (scriptTimer) clearTimeout(scriptTimer);
     if (readTimer) clearTimeout(readTimer);
+    if (threadTimer) clearTimeout(threadTimer);
+    unsubscribeOpenThreads();
     unsubscribeReadState();
     unsubscribeDMs();
     unsubscribeSettings();
@@ -560,6 +584,7 @@ function startWatching(get: () => AccountState) {
     syncedSettings = null;
     syncedScripts = null;
     syncedReadState = null;
+    syncedOpenThreads = null;
   };
 }
 
@@ -907,6 +932,47 @@ async function syncReadStateOnce() {
     syncedReadState = JSON.stringify(getReadState());
   } catch {
     // Best-effort: the markers are still kept in this browser.
+  }
+}
+
+/** One bot's open threads as stored in the vault. */
+interface OpenThreadsItem {
+  botId: string;
+  record: OpenThreadsState[string];
+}
+
+/** Per bot, the list changed last wins, in both directions. */
+async function syncOpenThreadsOnce() {
+  const key = vaultKey;
+  if (!key) return;
+  try {
+    const { items } = await vaultApi.items();
+    const remote: OpenThreadsState = {};
+    for (const item of items) {
+      if (item.kind !== "openthreads") continue;
+      try {
+        const stored = await decryptJson<OpenThreadsItem>(key, item.ciphertext);
+        const record = sanitizeOpenThreads(stored.record);
+        if (record) remote[stored.botId] = record;
+      } catch {
+        // Written under another key.
+      }
+    }
+    mergeOpenThreads(remote);
+
+    const payload = [];
+    for (const [botId, record] of Object.entries(getOpenThreadsState())) {
+      if (remote[botId]?.updatedAt === record.updatedAt) continue;
+      payload.push({
+        kind: "openthreads",
+        ref: await itemRef(key, "openthreads", botId),
+        ciphertext: await encryptJson(key, { botId, record } satisfies OpenThreadsItem),
+      });
+    }
+    if (payload.length > 0) await vaultApi.putItems(payload);
+    syncedOpenThreads = JSON.stringify(getOpenThreadsState());
+  } catch {
+    // Best-effort: the list is still kept in this browser.
   }
 }
 
