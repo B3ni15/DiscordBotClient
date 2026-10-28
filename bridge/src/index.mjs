@@ -92,8 +92,9 @@ function parseArguments(argv) {
     host: process.env.BRIDGE_HOST ?? DEFAULT_HOST,
     port: Number(process.env.BRIDGE_PORT ?? DEFAULT_PORT),
     // Without a secret any page the browser opens could drive this worker, so
-    // one is generated when none is given rather than left off.
-    secret: process.env.BRIDGE_SECRET ?? randomBytes(9).toString("base64url"),
+    // one is generated when none is given rather than left off. An empty value
+    // (for example `BRIDGE_SECRET=` in a compose env file) means the same.
+    secret: process.env.BRIDGE_SECRET || randomBytes(9).toString("base64url"),
   };
 
   for (let index = 0; index < argv.length; index++) {

@@ -1,0 +1,10 @@
+# syntax=docker/dockerfile:1
+
+# Sidecar that polls the git branch and rebuilds the app when it moves.
+# It needs the Docker CLI and the host's socket, plus git to fetch.
+
+FROM docker:cli
+RUN apk add --no-cache git
+COPY scripts/auto-update.sh /usr/local/bin/auto-update.sh
+RUN chmod +x /usr/local/bin/auto-update.sh
+ENTRYPOINT ["/usr/local/bin/auto-update.sh"]

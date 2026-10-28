@@ -764,6 +764,50 @@ With your own instance you can:
 
 This is especially useful when working with bots that have sensitive permissions.
 
+### Docker Compose
+
+The repository ships a Compose stack with three services:
+
+| Service | Purpose | Default host port |
+| --- | --- | --- |
+| `app` | The Next.js server (`next start`) | `6766` |
+| `bridge` | The voice worker, for calls without serverless time limits | `6768` |
+| `updater` | Polls git and redeploys on new commits | — |
+
+```bash
+cp .env.example .env    # fill in the Discord/D1 values you need
+docker compose up -d --build
+```
+
+Set at least these values in `.env`:
+
+- `HOST_PROJECT_DIR` — the absolute path of this repository on the host. The
+  updater mounts it at the same path so it can rebuild the same stack.
+- `BRIDGE_SECRET` — the secret the voice bridge requires. Without it a new one
+  is generated on every start; read it from `docker compose logs bridge`.
+- `APP_PORT` / `BRIDGE_HOST_PORT` — host ports, `6766` and `6768` by default.
+
+`app` and `bridge` both use `restart: unless-stopped`, so they come back after
+a crash or a host reboot. Accounts and the vault live in the `app-data` volume
+when Cloudflare D1 is not configured; with D1 credentials present the app uses
+D1 and leaves the volume unused.
+
+The updater runs `git fetch` every `UPDATE_INTERVAL` seconds (default 300). When
+`origin/$GIT_BRANCH` has moved it fast-forwards the checkout, then runs
+`docker compose up -d --build app bridge`. It never touches uncommitted changes:
+a pull that is not a fast-forward is skipped and retried on the next tick. To
+deploy manually instead, remove the `updater` service (and its Docker socket
+mount) from `docker-compose.yml`.
+
+Add the bridge to **Settings → Voice bridge** as
+`ws://YOUR_SERVER:6768?secret=…` — or `wss://…` behind a TLS reverse proxy,
+which is also required for the secure session cookie when signing in through
+Discord OAuth.
+
+> The updater mounts `/var/run/docker.sock`, which is effectively root access to
+> the host. Keep it pointed at a repository only you can push to, or drop the
+> service. It also runs as root, so files it pulls are owned by root.
+
 ---
 
 ## ⚠️ Token safety
