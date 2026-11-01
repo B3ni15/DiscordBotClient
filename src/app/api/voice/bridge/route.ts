@@ -59,6 +59,15 @@ export async function GET(request: Request) {
   const denied = originProblem(request);
   if (denied) return new Response(denied, { status: 403 });
 
+  // A plain GET (the page asks this way why a handshake failed) is not an
+  // upgrade attempt, so there is nothing to fail loudly about.
+  if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+    return new Response(
+      "This is the voice bridge's WebSocket endpoint. If connecting fails, the server is not handing out WebSocket upgrades: on Vercel enable Fluid compute; self-hosted, run the app with `node server.mjs` (the Docker image does) and make sure the container is rebuilt.",
+      { status: 426 },
+    );
+  }
+
   const id = `web-${nextSessionId++}`;
   const resolvedOpus = await opus;
 
