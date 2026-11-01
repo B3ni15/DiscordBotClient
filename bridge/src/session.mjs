@@ -43,6 +43,9 @@ export class Session {
   #statsTimer = null;
   /** What this side has seen since the last report, for the page to display. */
   #counts = { framesIn: 0, packetsIn: 0 };
+  /** Incoming-path counters for the server log, so "I can't hear anyone" can be pinned to a step. */
+  #rx = { speaking: 0, raw: 0, silence: 0, backlog: 0, decoded: 0, errors: 0 };
+  #rxTicks = 0;
 
   constructor(socket, { log, opus, id }) {
     this.#socket = socket;
@@ -223,6 +226,17 @@ export class Session {
       const counts = this.#counts;
       this.#counts = { framesIn: 0, packetsIn: 0 };
       const sending = this.#transmitter?.takeCounts();
+      this.#rxTicks += 1;
+      if (this.#rxTicks % 5 === 0 && this.#connection) {
+        const rx = this.#rx;
+        this.#log(
+          `last 10s: speaking-start=${rx.speaking} from-discord=${rx.raw} silence=${rx.silence} ` +
+            `decoded=${rx.decoded} decode-errors=${rx.errors} dropped-backlog=${rx.backlog} ` +
+            `subscriptions=${this.#connection.receiver.subscriptions.size} ` +
+            `connection=${this.#connection.state.status} socket-buffer=${this.#socket.bufferedAmount}`,
+        );
+        this.#rx = { speaking: 0, raw: 0, silence: 0, backlog: 0, decoded: 0, errors: 0 };
+      }
       this.#send({
         t: "stats",
         overMs: STATS_INTERVAL_MS,
@@ -246,6 +260,7 @@ export class Session {
     const receiver = connection.receiver;
 
     receiver.speaking.on("start", (userId) => {
+      this.#rx.speaking += 1;
       this.#send({ t: "speaking", userId, speaking: true });
       if (receiver.subscriptions.has(userId)) return;
 
@@ -267,14 +282,23 @@ export class Session {
       this.#decoders.set(userId, decoder);
 
       stream.on("data", (packet) => {
-        if (this.#socket.bufferedAmount > MAX_SOCKET_BACKLOG) return;
+        this.#rx.raw += 1;
+        if (this.#socket.bufferedAmount > MAX_SOCKET_BACKLOG) {
+          this.#rx.backlog += 1;
+          return;
+        }
         // Not audio, and opusscript's decoder does not survive being handed
         // this — the whole codec can go down over a single one.
-        if (isSilenceMarker(packet)) return;
+        if (isSilenceMarker(packet)) {
+          this.#rx.silence += 1;
+          return;
+        }
         try {
           this.#sendBinary(encodeIncomingAudio(userId, decoder.decode(packet)));
           this.#counts.packetsIn += 1;
+          this.#rx.decoded += 1;
         } catch (cause) {
+          this.#rx.errors += 1;
           this.#log(`could not decode audio from ${userId}: ${cause.message}`);
           if (!this.#warnedDecodeFailure) {
             this.#warnedDecodeFailure = true;
@@ -299,6 +323,7 @@ export class Session {
         }
         this.#decoders.delete(userId);
       };
+      stream.once("error", (cause) => this.#log(`receive stream for ${userId} failed: ${cause?.message ?? cause}`));
       stream.once("end", cleanup);
       stream.once("error", cleanup);
       stream.once("close", cleanup);
