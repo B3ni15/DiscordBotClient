@@ -89,6 +89,19 @@ server.on("upgrade", (request, socket, head) => {
   wss.handleUpgrade(request, socket, head, (ws) => attach(ws));
 });
 
+/*
+ * Next attaches an `upgrade` listener of its own to whatever server the first
+ * request arrived on (found through `req.socket.server`). It would then see
+ * every upgrade too — including the bridge's — and close the ones it has no
+ * route for, which kills the voice socket right after its 101 (close 1006).
+ * The listener above is the only one this server needs: it already passes
+ * every other path to Next, so later `upgrade` listeners are ignored.
+ */
+for (const method of ["on", "addListener", "prependListener", "once", "prependOnceListener"]) {
+  const original = server[method].bind(server);
+  server[method] = (event, listener) => (event === "upgrade" ? server : original(event, listener));
+}
+
 function attach(socket) {
   const id = `web-${nextSessionId++}`;
   const log = (message) => console.log(`[${id}] ${message}`);
