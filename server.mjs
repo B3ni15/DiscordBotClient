@@ -53,7 +53,16 @@ opus.onFatalCrash(() => {
   setTimeout(() => process.exit(1), CRASH_RECONNECT_GRACE_MS);
 });
 
+/** Handshake-level lines, so a connection that never reaches a session is still visible. */
+const verbose = process.env.VOICE_BRIDGE_VERBOSE !== "0";
+function trace(message) {
+  if (verbose) console.log(`[bridge] ${message}`);
+}
+
 const server = createServer((request, response) => {
+  if (request.url?.startsWith(BRIDGE_PATH)) {
+    trace(`plain HTTP ${request.method} (no upgrade) upgrade=${request.headers.upgrade ?? "-"} connection=${request.headers.connection ?? "-"} ray=${request.headers["cf-ray"] ?? "-"}`);
+  }
   handle(request, response).catch((cause) => {
     console.error("request failed", cause);
     response.statusCode = 500;
@@ -70,6 +79,7 @@ server.on("upgrade", (request, socket, head) => {
   }
 
   const denied = originProblem(request);
+  trace(`upgrade origin=${request.headers.origin ?? "-"} host=${request.headers.host} ray=${request.headers["cf-ray"] ?? "-"}${denied ? ` REFUSED: ${denied}` : ""}`);
   if (denied) {
     socket.write(`HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: ${Buffer.byteLength(denied)}\r\n\r\n${denied}`);
     socket.destroy();
@@ -83,6 +93,7 @@ function attach(socket) {
   const id = `web-${nextSessionId++}`;
   const log = (message) => console.log(`[${id}] ${message}`);
   const session = new Session(socket, { log, opus, id });
+  log("connected");
 
   openSockets.add(socket);
   // No `expiring` timer here: unlike a serverless function, this process has no
@@ -90,7 +101,8 @@ function attach(socket) {
   socket.send(JSON.stringify({ t: "hello", v: 1, opus: opus.name, hosted: true }));
 
   socket.on("message", (data, isBinary) => session.handleMessage(data, isBinary));
-  socket.on("close", () => {
+  socket.on("close", (code, reason) => {
+    log(`closed code=${code} reason=${reason?.toString() || "-"}`);
     openSockets.delete(socket);
     session.dispose();
   });
