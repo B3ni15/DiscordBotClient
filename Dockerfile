@@ -46,6 +46,9 @@ COPY --from=builder --chown=node:node /app/src/generated ./src/generated
 COPY --from=builder --chown=node:node /app/prisma ./prisma
 COPY --from=builder --chown=node:node /app/scripts ./scripts
 COPY --from=builder --chown=node:node /app/package.json ./package.json
+# server.mjs wraps Next and serves the voice worker from bridge/src on the same port.
+COPY --from=builder --chown=node:node /app/server.mjs ./server.mjs
+COPY --from=builder --chown=node:node /app/bridge/src ./bridge/src
 COPY --from=builder --chown=node:node /app/next.config.ts ./next.config.ts
 COPY --from=builder --chown=node:node /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder --chown=node:node /app/tsconfig.json ./tsconfig.json
@@ -55,4 +58,4 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 USER node
 EXPOSE 3000
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["./node_modules/.bin/next", "start"]
+CMD ["node", "server.mjs"]

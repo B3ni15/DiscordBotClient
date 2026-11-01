@@ -69,7 +69,7 @@ export async function GET(request: Request) {
     // hand out, so say what to do rather than throwing a stack at the browser.
     console.error("voice bridge upgrade failed", cause);
     return new Response(
-      "This deployment cannot upgrade WebSocket connections. Vercel serves them on the Node runtime with Fluid compute; elsewhere (including `next dev`), run the worker in bridge/ and point Settings at it.",
+      "This deployment cannot upgrade WebSocket connections. Vercel serves them on the Node runtime with Fluid compute. Self-hosted, start the app with `node server.mjs` (the Docker image does) so this same path works, or run the worker in bridge/ and point Settings at it.",
       { status: 501 },
     );
   }

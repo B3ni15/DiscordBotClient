@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:server": "node server.mjs",
     "lint": "eslint",
     "postinstall": "prisma generate && node scripts/copy-monaco.mjs",
     "db:generate": "prisma generate",

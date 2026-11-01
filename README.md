@@ -300,6 +300,16 @@ encryption libraries alongside it.
 | --- | --- |
 | `VOICE_BRIDGE_ALLOWED_ORIGINS` | Extra origins allowed to use the hosted worker, comma separated. By default only pages from the same deployment may, so another site cannot quietly spend your compute. `*` allows any. |
 
+#### Self-hosting: same URL, no second service
+
+`next start` cannot upgrade WebSockets, so the Docker image starts the app with
+[`server.mjs`](server.mjs) instead: it wraps Next and serves the very same worker
+at `/api/voice/bridge` on the app's own port. Behind a reverse proxy or a
+Cloudflare tunnel, `https://your.host/` and `wss://your.host/api/voice/bridge`
+are then the same hostname and the same ingress rule — nothing to add. Outside
+Docker, run `npm run build && npm run start:server`. There is no duration limit,
+so calls are not interrupted.
+
 #### Running it yourself instead
 
 `next dev` and self-hosted Node servers cannot upgrade WebSocket connections, so
